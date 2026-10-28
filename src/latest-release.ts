@@ -4,6 +4,7 @@ import {
   GitHubApiError,
   type GitHubApiOptions,
 } from "./github-api.js";
+import { compareVersions, isVersionTag } from "./version.js";
 
 export interface LatestRelease {
   tagName: string;
@@ -11,6 +12,54 @@ export interface LatestRelease {
 }
 
 export type GetLatestReleaseOptions = GitHubApiOptions;
+
+const RELEASES_PAGE_SIZE = 100;
+
+function readRelease(value: unknown): LatestRelease {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("tag_name" in value) ||
+    typeof value.tag_name !== "string" ||
+    !("html_url" in value) ||
+    typeof value.html_url !== "string" ||
+    !URL.canParse(value.html_url) ||
+    new URL(value.html_url).protocol !== "https:"
+  ) {
+    throw new Error("GitHub API returned invalid latest release metadata.");
+  }
+  return { tagName: value.tag_name, releaseNotesUrl: value.html_url };
+}
+
+/**
+ * Picks the highest version-tagged, published, non-prerelease release. Some
+ * repositories (for example github/codeql-action) also publish non-Action
+ * releases such as "codeql-bundle-v2.27.3", which GitHub may mark as latest.
+ */
+function findHighestVersionRelease(value: unknown): LatestRelease | null {
+  if (!Array.isArray(value)) {
+    throw new Error("GitHub API returned an invalid release list.");
+  }
+  let best: LatestRelease | null = null;
+  for (const item of value) {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      ("draft" in item && item.draft === true) ||
+      ("prerelease" in item && item.prerelease === true)
+    ) {
+      continue;
+    }
+    const release = readRelease(item);
+    if (
+      isVersionTag(release.tagName) &&
+      (best === null || compareVersions(release.tagName, best.tagName) > 0)
+    ) {
+      best = release;
+    }
+  }
+  return best;
+}
 
 export async function getLatestRelease(
   repository: Pick<ParsedActionReference, "owner" | "repository">,
@@ -34,21 +83,15 @@ export async function getLatestRelease(
     throw error;
   }
 
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("tag_name" in value) ||
-    typeof value.tag_name !== "string" ||
-    !("html_url" in value) ||
-    typeof value.html_url !== "string" ||
-    !URL.canParse(value.html_url) ||
-    new URL(value.html_url).protocol !== "https:"
-  ) {
-    throw new Error("GitHub API returned invalid latest release metadata.");
+  const latest = readRelease(value);
+  if (isVersionTag(latest.tagName)) {
+    return latest;
   }
 
-  return {
-    tagName: value.tag_name,
-    releaseNotesUrl: value.html_url,
-  };
+  const releases = await getRepositoryJson(
+    repository.owner,
+    repository.repository,
+    `/releases?per_page=${RELEASES_PAGE_SIZE}`,
+  );
+  return findHighestVersionRelease(releases) ?? latest;
 }

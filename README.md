@@ -104,19 +104,27 @@ gh action-inspector actions/checkout@v4
 ```
 
 ```text
-Repository: actions/checkout
-Original reference: v4
-Reference type: tag
-Resolved commit SHA: 11d5960a326750d5838078e36cf38b85af677262
-Resolved version: v4.4.0
-Current SHA-pinned equivalent: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-License: MIT
-Archived: No
-Immutable: No
-Latest release: v7.0.1
-Release notes: https://github.com/actions/checkout/releases/tag/v7.0.1
-Newer version available: Yes (v7.0.1)
-Latest SHA-pinned release: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+actions/checkout@v4
+
+Reference
+  Type           tag
+  Commit SHA     11d5960a326750d5838078e36cf38b85af677262
+  Version        v4.4.0
+  Immutable      No (a tag can be moved)
+  SHA-pinned     actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+Repository
+  Name           actions/checkout
+  License        MIT
+  Archived       No
+
+Latest release
+  Version        v7.0.1
+  Newer version  Yes (v4.4.0 → v7.0.1)
+  Release notes  https://github.com/actions/checkout/releases/tag/v7.0.1
+
+Pin to latest release
+  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
 
 ### Inspecting a pinned commit SHA
@@ -129,23 +137,45 @@ gh action-inspector actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 ```
 
 ```text
-Repository: actions/checkout
-Original reference: 11d5960a326750d5838078e36cf38b85af677262
-Reference type: sha
-Resolved commit SHA: 11d5960a326750d5838078e36cf38b85af677262
-Resolved version: v4.4.0
-Current SHA-pinned equivalent: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-License: MIT
-Archived: No
-Immutable: Yes
-Latest release: v7.0.1
-Release notes: https://github.com/actions/checkout/releases/tag/v7.0.1
-Newer version available: Yes (v7.0.1)
-Latest SHA-pinned release: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+Reference
+  Type           sha
+  Commit SHA     11d5960a326750d5838078e36cf38b85af677262
+  Version        v4.4.0
+  Immutable      Yes
+  SHA-pinned     actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+Repository
+  Name           actions/checkout
+  License        MIT
+  Archived       No
+
+Latest release
+  Version        v7.0.1
+  Newer version  Yes (v4.4.0 → v7.0.1)
+  Release notes  https://github.com/actions/checkout/releases/tag/v7.0.1
+
+Pin to latest release
+  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
 
 The SHA must be the full 40-character commit SHA. If no tag points to the
-commit, `Resolved version` shows `Not found (no tag points to this commit)`.
+commit, `Version` shows `Not found (no tag points to this commit)`.
+
+### Terminal output
+
+When run in a terminal, the output uses colors and status icons (✓, ⚠, ✗) and
+shows a progress message while GitHub is queried. Colors are disabled
+automatically when the output is redirected or piped, or when `NO_COLOR` is set.
+
+### JSON output
+
+Use `--json` for machine-readable output, for example in scripts:
+
+```bash
+gh action-inspector --json actions/checkout@v4
+```
 
 ## 🚧 Project Status
 

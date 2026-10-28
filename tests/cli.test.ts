@@ -19,7 +19,13 @@ const latestRelease = {
 
 type Dependencies = NonNullable<Parameters<typeof runCli>[2]>;
 
-async function run(args: string[], overrides: Partial<Dependencies> = {}) {
+const row = (label: string, value: string) => `  ${label.padEnd(15)}${value}`;
+
+async function run(
+  args: string[],
+  overrides: Partial<Dependencies> = {},
+  options: { color?: boolean; status?: (message: string | null) => void } = {},
+) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const exitCode = await runCli(
@@ -27,6 +33,7 @@ async function run(args: string[], overrides: Partial<Dependencies> = {}) {
     {
       stdout: (message) => stdout.push(message),
       stderr: (message) => stderr.push(message),
+      ...options,
     },
     {
       resolve: async (action) =>
@@ -48,19 +55,27 @@ describe("action-inspector CLI", () => {
     await expect(run(["actions/checkout@v4"])).resolves.toEqual({
       exitCode: 0,
       stdout: [
-        "Repository: actions/checkout",
-        "Original reference: v4",
-        "Reference type: tag",
-        `Resolved commit SHA: ${resolved.sha}`,
-        "Resolved version: v4.2.2",
-        `Current SHA-pinned equivalent: actions/checkout@${resolved.sha}`,
-        "License: MIT",
-        "Archived: No",
-        "Immutable: No",
-        "Latest release: v6.0.0",
-        `Release notes: ${latestRelease.releaseNotesUrl}`,
-        "Newer version available: Yes (v6.0.0)",
-        `Latest SHA-pinned release: actions/checkout@${latestSha} # v6.0.0`,
+        "actions/checkout@v4",
+        "",
+        "Reference",
+        row("Type", "tag"),
+        row("Commit SHA", resolved.sha),
+        row("Version", "v4.2.2"),
+        row("Immutable", "No (a tag can be moved)"),
+        row("SHA-pinned", `actions/checkout@${resolved.sha} # v4.2.2`),
+        "",
+        "Repository",
+        row("Name", "actions/checkout"),
+        row("License", "MIT"),
+        row("Archived", "No"),
+        "",
+        "Latest release",
+        row("Version", "v6.0.0"),
+        row("Newer version", "Yes (v4.2.2 → v6.0.0)"),
+        row("Release notes", latestRelease.releaseNotesUrl),
+        "",
+        "Pin to latest release",
+        `  uses: actions/checkout@${latestSha} # v6.0.0`,
       ],
       stderr: [],
     });
@@ -89,23 +104,31 @@ describe("action-inspector CLI", () => {
       }),
     });
 
-    expect(calls).toEqual([`tag:${sha}`, `compare:${sha}...${latestSha}`]);
+    expect(calls).toEqual([`tag:${sha}`]);
     expect(result).toEqual({
       exitCode: 0,
       stdout: [
-        "Repository: actions/checkout",
-        `Original reference: ${sha}`,
-        "Reference type: sha",
-        `Resolved commit SHA: ${sha}`,
-        "Resolved version: v4.1.0",
-        `Current SHA-pinned equivalent: actions/checkout@${sha}`,
-        "License: Not detected",
-        "Archived: Yes",
-        "Immutable: Yes",
-        "Latest release: v6.0.0",
-        `Release notes: ${latestRelease.releaseNotesUrl}`,
-        "Newer version available: Yes (v6.0.0)",
-        `Latest SHA-pinned release: actions/checkout@${latestSha} # v6.0.0`,
+        `actions/checkout@${sha}`,
+        "",
+        "Reference",
+        row("Type", "sha"),
+        row("Commit SHA", sha),
+        row("Version", "v4.1.0"),
+        row("Immutable", "Yes"),
+        row("SHA-pinned", `actions/checkout@${sha} # v4.1.0`),
+        "",
+        "Repository",
+        row("Name", "actions/checkout"),
+        row("License", "Not detected"),
+        row("Archived", "Yes (no longer maintained)"),
+        "",
+        "Latest release",
+        row("Version", "v6.0.0"),
+        row("Newer version", "Yes (v4.1.0 → v6.0.0)"),
+        row("Release notes", latestRelease.releaseNotesUrl),
+        "",
+        "Pin to latest release",
+        `  uses: actions/checkout@${latestSha} # v6.0.0`,
       ],
       stderr: [],
     });
@@ -114,21 +137,46 @@ describe("action-inspector CLI", () => {
   it.each<{ status: CommitComparisonStatus; expected: string }>([
     { status: "identical", expected: "No" },
     { status: "behind", expected: "No" },
-    { status: "ahead", expected: "Yes (v6.0.0)" },
-    { status: "diverged", expected: "Yes (v6.0.0)" },
-  ])("reports newer version availability when the latest release is $status", async ({ status, expected }) => {
-    const { stdout } = await run(["actions/checkout@v4"], {
+    { status: "ahead", expected: "Yes (main → v6.0.0)" },
+    { status: "diverged", expected: "Yes (main → v6.0.0)" },
+  ])("uses commit comparison when no version tag is known and the latest release is $status", async ({ status, expected }) => {
+    const { stdout } = await run(["actions/checkout@main"], {
+      findVersionTag: async () => null,
       compareCommits: async () => status,
     });
-    expect(stdout).toContain(`Newer version available: ${expected}`);
+    expect(stdout).toContain(row("Newer version", expected));
+  });
+
+  it.each([
+    { version: "v3.39.1", latest: "v4.39.1", expected: "Yes (v3.39.1 → v4.39.1)" },
+    { version: "v4.39.1", latest: "v4.39.1", expected: "No" },
+    { version: "v4.10.0", latest: "v4.9.0", expected: "No" },
+  ])("compares version numbers ($version vs $latest) instead of commits", async ({ version, latest, expected }) => {
+    const { stdout } = await run(["github/codeql-action/analyze@v3"], {
+      getLatestRelease: async () => ({ ...latestRelease, tagName: latest }),
+      findVersionTag: async () => version,
+      compareCommits: async () => {
+        throw new Error("commit comparison should not be used");
+      },
+    });
+    expect(stdout).toContain(row("Newer version", expected));
   });
 
   it("reports when no tag points to the resolved commit", async () => {
     const { stdout } = await run(["actions/checkout@main"], {
+      resolve: async (action) =>
+        action.ref === latestRelease.tagName
+          ? { sha: latestSha, refType: "tag" }
+          : { sha: resolved.sha, refType: "branch" },
       findVersionTag: async () => null,
     });
-    expect(stdout).toContain(
-      "Resolved version: Not found (no tag points to this commit)",
+    expect(stdout).toEqual(
+      expect.arrayContaining([
+        row("Version", "Not found (no tag points to this commit)"),
+        row("Immutable", "No (a branch can be moved)"),
+        row("SHA-pinned", `actions/checkout@${resolved.sha}`),
+        row("Newer version", "Yes (main → v6.0.0)"),
+      ]),
     );
   });
 
@@ -138,19 +186,85 @@ describe("action-inspector CLI", () => {
       { getMetadata: async () => ({ ...metadata, fullName: "owner/repository" }) },
     );
     expect(exitCode).toBe(0);
+    expect(stdout[0]).toBe("owner/repository/path/to/action@main");
     expect(stdout).toContain(
-      `Latest SHA-pinned release: owner/repository/path/to/action@${latestSha} # v6.0.0`,
+      `  uses: owner/repository/path/to/action@${latestSha} # v6.0.0`,
     );
+  });
+
+  it("prints a JSON report with --json", async () => {
+    const { exitCode, stdout, stderr } = await run(["--json", "actions/checkout@v4"]);
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: [] });
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0])).toEqual({
+      action: "actions/checkout",
+      repository: "actions/checkout",
+      reference: {
+        original: "v4",
+        type: "tag",
+        sha: resolved.sha,
+        version: "v4.2.2",
+        immutable: false,
+        pinned: `actions/checkout@${resolved.sha} # v4.2.2`,
+      },
+      license: "MIT",
+      archived: false,
+      latestRelease: {
+        version: "v6.0.0",
+        sha: latestSha,
+        releaseNotesUrl: latestRelease.releaseNotesUrl,
+        newerAvailable: true,
+        pinned: `actions/checkout@${latestSha} # v6.0.0`,
+      },
+    });
+  });
+
+  it("adds colors and status icons when color is enabled", async () => {
+    const { stdout } = await run(["actions/checkout@v4"], {}, { color: true });
+    const output = stdout.join("\n");
+    expect(output).toContain("\x1b[");
+    expect(output).toContain("⚠ No (a tag can be moved)");
+    expect(output).toContain("✓ No");
+    expect(output.replace(/\x1b\[[0-9;]*m/g, "")).toContain(
+      `uses: actions/checkout@${latestSha} # v6.0.0`,
+    );
+  });
+
+  it.each([
+    { description: "success", overrides: {} },
+    {
+      description: "failure",
+      overrides: {
+        resolve: async () => {
+          throw new Error("boom");
+        },
+      },
+    },
+  ])("shows and clears a progress status on $description", async ({ overrides }) => {
+    const statuses: (string | null)[] = [];
+    await run(["actions/checkout@v4"], overrides, {
+      status: (message) => statuses.push(message),
+    });
+    expect(statuses).toEqual(["Inspecting actions/checkout@v4…", null]);
+  });
+
+  it.each([["--help"], ["-h"]])("prints usage for %s", async (flag) => {
+    await expect(run([flag])).resolves.toEqual({
+      exitCode: 0,
+      stdout: ["Usage: action-inspector [--json] <owner/repository[/path]@ref>"],
+      stderr: [],
+    });
   });
 
   it.each([
     { description: "no arguments", args: [] },
     { description: "multiple arguments", args: ["actions/checkout@v6", "extra"] },
+    { description: "an unknown option", args: ["--verbose", "actions/checkout@v6"] },
   ])("shows usage and fails when given $description", async ({ args }) => {
     await expect(run(args)).resolves.toEqual({
       exitCode: 1,
       stdout: [],
-      stderr: ["Usage: action-inspector <owner/repository[/path]@ref>"],
+      stderr: ["Usage: action-inspector [--json] <owner/repository[/path]@ref>"],
     });
   });
 
@@ -204,6 +318,7 @@ describe("action-inspector CLI", () => {
     {
       description: "commit comparison",
       overrides: {
+        findVersionTag: async () => null,
         compareCommits: async () => {
           throw new Error("GitHub API request failed with HTTP 404.");
         },
