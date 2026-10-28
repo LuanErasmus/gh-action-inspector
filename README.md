@@ -1,5 +1,10 @@
 # 🔍 Action Inspector
 
+[![CI](https://github.com/LuanErasmus/action-inspector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LuanErasmus/action-inspector/actions/workflows/ci.yml)
+[![Release](https://github.com/LuanErasmus/action-inspector/actions/workflows/release.yml/badge.svg)](https://github.com/LuanErasmus/action-inspector/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/LuanErasmus/action-inspector?sort=semver)](https://github.com/LuanErasmus/action-inspector/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/LuanErasmus/action-inspector)](LICENSE)
+
 **Know what you're running before you add `uses:`.**
 
 GitHub Actions workflows frequently reference external Actions using syntax like:
