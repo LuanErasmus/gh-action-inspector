@@ -318,11 +318,11 @@ describe("upgrades and CI policies", () => {
     const original = deps.resolve;
     deps.resolve = async (action) => action.ref === "v2.0.0"
       ? { sha: "b".repeat(40), refType: "tag" } : original(action);
-    const preview = await scanRepository(root, "upgrade", deps, { policy: "latest" });
+    const preview = await scanRepository(root, "upgrade", deps, { policy: "major" });
     expect(preview.rows[0]).toMatchObject({ target: "v2.0.0", majorUpgrade: true });
     expect(preview.changes[0].after).toContain(`${"b".repeat(40)} # v2.0.0`);
     expect(await readFile(join(root, ".github", "workflows", "ci.yml"), "utf8")).toBe(source);
-    const written = await scanRepository(root, "upgrade", deps, { policy: "latest", write: true });
+    const written = await scanRepository(root, "upgrade", deps, { policy: "major", write: true });
     expect(written.written).toHaveLength(1);
   });
 

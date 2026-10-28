@@ -3,7 +3,7 @@ import type { ParsedActionReference } from "./parse-reference.js";
 import { compareVersions, isVersionTag } from "./version.js";
 import type { LatestRelease } from "./latest-release.js";
 
-export type UpgradePolicy = "patch" | "major" | "latest";
+export type UpgradePolicy = "patch" | "minor" | "major" | "latest";
 
 /** Lists stable version releases, not unrelated products or moving major tags. */
 export async function listVersionReleases(
@@ -49,6 +49,8 @@ export function selectUpgrade(
   return releases.filter((release) => {
     if (!/^v?\d+\.\d+\.\d+$/.test(release.tagName) || compareVersions(release.tagName, current) <= 0) return false;
     const [nextMajor, nextMinor] = parts(release.tagName);
-    return policy === "latest" || (nextMajor === major && (policy === "major" || nextMinor === minor));
+    return policy === "latest" ||
+      (policy === "major" ? nextMajor === major + 1
+        : nextMajor === major && (policy === "minor" || nextMinor === minor));
   }).sort((a, b) => compareVersions(b.tagName, a.tagName))[0];
 }

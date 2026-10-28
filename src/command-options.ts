@@ -14,8 +14,8 @@ export function parseRepositoryOptions(args: string[], mode: "scan" | "pin" | "u
     if (arg === "--write" && mode !== "scan") { options.write = true; continue; }
     if (arg === "--policy" && mode === "upgrade") {
       const value = args[++i];
-      if (value !== "patch" && value !== "major" && value !== "latest") {
-        throw new Error("--policy must be patch, major (within the current major), or latest.");
+      if (value !== "patch" && value !== "minor" && value !== "major" && value !== "latest") {
+        throw new Error("--policy must be patch, minor (within the current major), major (next major only), or latest.");
       }
       options.policy = value;
       continue;

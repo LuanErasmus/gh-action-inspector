@@ -94,9 +94,10 @@ function helpLines(command?: string): string[] {
     ] : []),
     ...(command === "pin" || command === "upgrade" ? writeOptions : []),
     ...(command === "upgrade" ? [
-      "  --policy <policy>       Upgrade boundary (default: major)",
+      "  --policy <policy>       Upgrade boundary (default: minor)",
       "    patch                 Stay within the current major and minor",
-      "    major                 Stay within the current major",
+      "    minor                 Stay within the current major",
+      "    major                 Upgrade to the next major only (v5 -> v6)",
       "    latest                Allow upgrades to newer major versions",
     ] : []),
     ...shared,
@@ -187,7 +188,7 @@ export async function runCli(
   }
   if (args[0] === "scan" || args[0] === "pin" || args[0] === "upgrade") {
     const mode = args[0];
-    const usage = `Usage: action-inspector ${mode} [directory] [--json]${mode !== "scan" ? " [--dry-run | --write]" : " [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]"}${mode === "upgrade" ? " [--policy patch|major|latest]" : ""}`;
+    const usage = `Usage: action-inspector ${mode} [directory] [--json]${mode !== "scan" ? " [--dry-run | --write]" : " [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]"}${mode === "upgrade" ? " [--policy patch|minor|major|latest]" : ""}`;
     if (args.includes("--help") || args.includes("-h")) {
       output.stdout(renderLines(helpLines(mode), output).join("\n"));
       return 0;

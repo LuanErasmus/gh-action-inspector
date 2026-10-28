@@ -59,7 +59,7 @@ gh action-inspector scan
 gh action-inspector pin --dry-run
 
 # Preview upgrades within each Action's current major version
-gh action-inspector upgrade --policy major
+gh action-inspector upgrade --policy minor
 
 # Compare runtime, inputs, defaults, outputs, and deprecations
 gh action-inspector compare actions/checkout@v4 actions/checkout@v7
