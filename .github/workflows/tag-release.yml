@@ -1,0 +1,86 @@
+name: Tag merged release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out merged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Detect version increment
+        id: version
+        run: |
+          git show HEAD^:package.json > "$RUNNER_TEMP/previous-package.json"
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import assert from "node:assert/strict";
+          const current = JSON.parse(fs.readFileSync("package.json")).version;
+          const previous = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/previous-package.json`)).version;
+          if (current === previous) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "changed=false\n");
+          } else {
+            const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+            assert.match(current, pattern, "Only stable numeric release versions are supported");
+            assert.match(previous, pattern);
+            const a = current.split(".").map(BigInt);
+            const b = previous.split(".").map(BigInt);
+            const difference = a.findIndex((value, index) => value !== b[index]);
+            assert.ok(difference >= 0 && a[difference] > b[difference], "Release version must increase");
+            const lock = JSON.parse(fs.readFileSync("package-lock.json"));
+            assert.equal(lock.version, current);
+            assert.equal(lock.packages[""].version, current);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `changed=true\ntag=v${current}\n`);
+          }
+          NODE
+
+      - name: Verify release commit
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Create repository-scoped App token
+        if: steps.version.outputs.changed == 'true'
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Create immutable version tag
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh api --method POST "repos/$GH_REPO/git/refs" \
+            -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA"

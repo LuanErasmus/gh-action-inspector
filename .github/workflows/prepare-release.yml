@@ -1,0 +1,90 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Update package version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          case "$BUMP" in patch|minor|major) ;; *) echo "::error::Invalid version increment"; exit 1 ;; esac
+          npm version "$BUMP" --no-git-tag-version --ignore-scripts
+          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create repository-scoped App token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open version-bump pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [ "$(gh pr list --state open --base main --json headRefName --jq '[.[] | select(.headRefName | startswith("release/"))] | length')" -ne 0 ]; then
+            echo "::error::An open release PR already exists. Merge or close it first."
+            exit 1
+          fi
+          git switch -c "release/$TAG"
+          git config user.name "Release automation"
+          git config user.email "release-automation@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Release $TAG"
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/release/$TAG"
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const template = fs.readFileSync(".github/PULL_REQUEST_TEMPLATE.md", "utf8").replace(/\r\n/g, "\n");
+          const body = template
+            .replace("<!-- Describe what this pull request changes and why. -->",
+              `<!-- Describe what this pull request changes and why. -->\n\nPrepare ${process.env.TAG}. Merge after required checks pass to trigger verification, tagging, and release publishing.`)
+            .replace("<!-- Link related issues, for example: Closes #123. -->",
+              "<!-- Link related issues, for example: Closes #123. -->\n\nN/A")
+            .replace("<!-- List the main changes. -->\n\n-",
+              `<!-- List the main changes. -->\n\n- Bump package.json and package-lock.json to ${process.env.TAG}.`)
+            .replace("<!-- Describe the checks you ran, or explain why none were needed. -->\n\n-",
+              "<!-- Describe the checks you ran, or explain why none were needed. -->\n\n- Tests, type-check, and build were not run by preparation; required PR CI runs separately. Do not merge until it passes.");
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/release-pr.md`, body);
+          NODE
+          gh pr create --base main --head "release/$TAG" \
+            --title "Release $TAG" \
+            --body-file "$RUNNER_TEMP/release-pr.md"
