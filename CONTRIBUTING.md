@@ -76,19 +76,46 @@ and use relative links between repository documents.
 
 Releases follow [Semantic Versioning](https://semver.org/) and are published
 by the [Release workflow](.github/workflows/release.yml) when a version tag is
-pushed. Maintainers release from an up-to-date `main` branch:
+pushed. Version bumps must go through a pull request; do not commit directly to
+protected `main` or create a release tag on an unmerged branch.
+
+1. Create a release branch from up-to-date `main`.
+2. Update the version without automatically committing or creating a tag:
 
 ```sh
-npm version patch   # or: minor, major
-git push --follow-tags
+npm version patch --no-git-tag-version   # or: minor, major
 ```
 
-`npm version` updates `package.json` and `package-lock.json`, commits the
-change, and creates a matching `vX.Y.Z` tag. The workflow verifies that the
+3. Commit both `package.json` and `package-lock.json`, push the release branch,
+   and open a pull request. Let the required checks and reviews complete,
+   then merge it into `main`.
+4. With a clean working tree, check out `main`, fast-forward to the merged
+   commit, and confirm its CI checks passed. Create the tag from that commit:
+
+```powershell
+git switch main
+git pull --ff-only origin main
+$tag = "v$(node -p "require('./package.json').version")"
+git tag -a $tag -m "Release $tag"
+git push origin $tag
+```
+
+Only an authorized release maintainer can push release tags. Do not reuse,
+move, or delete an existing release tag; publish a new version for corrections.
+Tag the merged commit, not the pre-merge branch commit, especially when using
+squash or rebase merging.
+
+The workflow verifies that the
 tag matches `package.json`, runs the tests and type-check, builds a standalone
-executable for each supported platform, and then creates a GitHub Release with
-the executables attached and automatically generated release notes. The GitHub
-CLI uses these release assets when users run
+executable for each supported platform, and then creates a draft GitHub Release
+with the executables attached and automatically generated release notes. Only
+after all uploads succeed does it publish the release. This supports immutable
+releases: assets cannot be added or replaced after publication.
+
+If uploading fails, the release stays as a draft. Inspect its assets before
+recovering; the creation step does not overwrite or resume an existing draft.
+Once published as immutable, corrections require a new version and tag.
+The GitHub CLI uses these release assets when users run
 `gh extension install LuanErasmus/gh-action-inspector`.
 
 Please avoid including credentials, tokens, or other sensitive information in
