@@ -115,7 +115,7 @@ move below the table in narrow terminals. Reports wrap explanatory text to the t
 Colors are used only when terminal color support is detected. Piping or
 redirecting output disables colors and inspection icons. Set `NO_COLOR` to
 request plain output. Use `--json` for scripts rather than parsing the report.
-Copyable YAML and patch lines remain unwrapped intentionally.
+Copyable YAML in Before/After change cards remains unwrapped intentionally.
 
 ## Installed extension differs from the local build
 

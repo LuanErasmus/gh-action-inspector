@@ -105,7 +105,7 @@ describe("readable terminal reports", () => {
     expect(colored.map(stripVTControlCharacters)).toEqual(plain);
   });
 
-  it("keeps copyable uses lines and diff contents intact at narrow widths", () => {
+  it("keeps copyable YAML intact in labeled change cards at narrow widths", () => {
     const literal = `  uses: actions/example@${sha} # v1.0.0`;
     expect(renderLines([literal], { width: 20 })).toEqual([literal]);
     const before = "      - uses: actions/example@v1";
@@ -114,9 +114,32 @@ describe("readable terminal reports", () => {
       mode: "pin", files: 1, rows: [], errors: [],
       changes: [{ file: "ci.yml", line: 7, before, after }],
     }, { width: 40 });
-    expect(lines).toContain(`-${before}`);
-    expect(lines).toContain(`+${after}`);
-    expect(lines).toContain("@@ -7 +7 @@");
+    expect(lines).toContain(before);
+    expect(lines).toContain(after);
+    expect(lines).toContain("  Line 7");
+    expect(lines).toContain("    Before:");
+    expect(lines).toContain("    After:");
+    expect(lines.join("\n")).not.toContain("@@");
+  });
+
+  it.each(["pin", "upgrade"] as const)("groups %s change cards once per file with plain/color parity", (mode) => {
+    const changes = [
+      { file: "ci.yml", line: 7, before: "  - uses: owner/action@v1", after: `  - uses: owner/action@${sha} # v1` },
+      { file: "deploy.yml", line: 9, before: "job: { uses: owner/repo/workflow@v1 }", after: `job: { uses: owner/repo/workflow@${sha} }` },
+      { file: "ci.yml", line: 11, before: "  - uses: owner/other@v1", after: `  - uses: owner/other@${sha}` },
+    ];
+    const report: ScanReport = { mode, files: 2, rows: [], errors: [], changes };
+    const plain = formatScan(report, { width: 40 });
+    const colored = formatScan(report, { width: 40, color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    expect(plain.filter((line) => line === "ci.yml")).toHaveLength(1);
+    expect(plain).toContain("  2 changed lines");
+    for (const change of changes) {
+      expect(plain).toContain(change.before);
+      expect(plain).toContain(change.after);
+    }
+    expect(plain.join("\n")).toContain("    After:\n" + changes[0].after + "\n\n  Line 11");
+    expect(plain).toContain("3 lines would change. No files written;");
   });
 
   it("shows a compact input table and retains deprecation warnings", () => {
