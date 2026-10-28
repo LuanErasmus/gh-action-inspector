@@ -19,6 +19,59 @@ documentation, bug reports, and ideas are welcome.
 4. Open a pull request describing the problem, your changes, and any relevant
    verification results. Link related issues when applicable.
 
+## Local development
+
+Install dependencies, build the TypeScript CLI, and run it directly:
+
+```bash
+npm install
+npm run build
+node .\dist\main.js actions/checkout@v7
+node .\dist\main.js --help
+```
+
+Alternatively, link the development build for use from any directory:
+
+```bash
+npm link
+action-inspector actions/checkout@v7
+```
+
+Rebuild after source changes. The development build is separate from the
+executable installed by `gh extension install`.
+
+Run the existing validation commands:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+Build a standalone executable for the current platform into `release/`:
+
+```bash
+npm run build:executable
+```
+
+The CLI queries GitHub's REST API and automatically uses your GitHub CLI login.
+See [authentication and API troubleshooting](docs/troubleshooting.md) for token
+precedence, caching, and rate limits.
+
+## Documentation
+
+Keep the [README](README.md) focused on installation, quick start, and essential
+safety defaults. Detailed user documentation lives in these guides:
+
+- [Command reference](docs/commands.md): syntax, flags, output, and exit codes.
+- [Pinning and upgrades](docs/pinning-and-upgrades.md): selection and write behaviour.
+- [CI policies](docs/ci-policies.md): enforcement and CI integration.
+- [Troubleshooting](docs/troubleshooting.md): authentication and operational issues.
+
+Update the guide that owns a behaviour rather than duplicating detailed
+explanations in the README. Keep examples and CLI help consistent with the code,
+and use relative links between repository documents.
+
 ## Releases
 
 Releases follow [Semantic Versioning](https://semver.org/) and are published
