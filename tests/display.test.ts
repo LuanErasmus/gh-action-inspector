@@ -119,7 +119,7 @@ describe("readable terminal reports", () => {
     expect(lines).toContain("@@ -7 +7 @@");
   });
 
-  it("separates input descriptions, defaults, and deprecations", () => {
+  it("shows a compact input table and retains deprecation warnings", () => {
     const lines = formatText(inspection, false, 50);
     expect(lines.filter((line) => !line.trimStart().startsWith("uses:"))
       .every((line) => Array.from(line).length <= 50)).toBe(true);
@@ -127,11 +127,15 @@ describe("readable terminal reports", () => {
     expect(output).toContain("Inputs (1)");
     expect(output).toContain("Outputs (1)");
     expect(output).toContain('Default: "sample"');
+    expect(output).toContain("| Input");
+    expect(output).toContain("| Configuration");
     expect(output).toContain("WARNING: Deprecated");
+    expect(output).not.toContain("A lengthy input description");
+    expect(output.replace(/\s/g, "")).toContain(`https://github.com/actions/example/blob/${sha}/action.yml`);
     expect(output).not.toContain("\x1b[");
   });
 
-  it("keeps every metadata paragraph inside its input or output block", () => {
+  it("links full input descriptions while keeping output paragraphs indented", () => {
     const report: InspectionReport = {
       ...inspection,
       details: {
@@ -141,8 +145,37 @@ describe("readable terminal reports", () => {
       },
     };
     const output = formatText(report, false, 80).join("\n");
-    expect(output).toContain("    First paragraph.\n\n    Second paragraph.\n\nOutputs");
+    expect(output).not.toContain("First paragraph.");
+    expect(output).not.toContain("Second paragraph.");
     expect(output).toContain("  Output result\n    First output line.\n    Second output line.");
+  });
+
+  it("distinguishes missing and empty defaults and links nested metadata exactly", () => {
+    const report: InspectionReport = {
+      ...inspection,
+      action: "actions/example/nested",
+      details: {
+        ...details, path: "nested/action.yaml",
+        inputs: {
+          missing: { required: true },
+          empty: { required: false, default: "" },
+          multiline: { required: false, default: "first\nsecond" },
+        },
+      },
+    };
+    const output = formatText(report, false, 100).join("\n");
+    expect(output).toMatch(/\| missing\s*\| Yes\s*\| \(not set\)/);
+    expect(output).toMatch(/\| empty\s*\| No\s*\| ""/);
+    expect(output).toContain('"first\\nsecond"');
+    expect(output.replace(/\s/g, "")).toContain(`/blob/${sha}/nested/action.yaml`);
+  });
+
+  it("shows an explicit empty-input state without an empty table", () => {
+    const output = formatText({
+      ...inspection, details: { ...details, inputs: {} },
+    }, false, 80).join("\n");
+    expect(output).toContain("No inputs declared.");
+    expect(output).not.toContain("| Input");
   });
 
   it("groups comparison findings separately from manual-review guidance", () => {

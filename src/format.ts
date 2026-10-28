@@ -1,6 +1,6 @@
 import type { ActionReferenceType } from "./resolve-reference.js";
 import type { ActionDetails, ActionDetailsComparison } from "./action-details.js";
-import { renderLines, type DisplayOptions } from "./terminal.js";
+import { formatTable, renderLines, type DisplayOptions } from "./terminal.js";
 
 export interface InspectionReport {
   action: string;
@@ -80,6 +80,11 @@ export function formatText(report: InspectionReport, color: boolean, width?: num
   const labelWidth =
     Math.max(...sections.flatMap(([, rows]) => rows.map(([label]) => label.length))) + 2;
   const heading = (text: string) => text;
+  const tableWidth = width !== undefined && Number.isFinite(width) ? Math.max(24, width) : 100;
+  const inputs = Object.entries(report.details?.inputs ?? {});
+  const metadataPath = (report.details?.path ?? "action.yml").split("/")
+    .map(encodeURIComponent).join("/");
+  const metadataUrl = `https://github.com/${report.repository}/blob/${report.details?.sha}/${metadataPath}`;
 
   return renderLines([
     `${report.action}@${reference.original}`,
@@ -98,13 +103,22 @@ export function formatText(report: InspectionReport, color: boolean, width?: num
       `  File: ${report.details.path}`,
       "",
       heading(`Inputs (${Object.keys(report.details.inputs).length})`),
-      ...Object.entries(report.details.inputs).flatMap(([name, input]) => [
-        `  Input ${name}: ${input.required ? "required" : "optional"}`,
-        ...(input.default === undefined ? [] : [`    Default: ${JSON.stringify(input.default)}`]),
-        ...descriptionLines(input.description),
-        ...descriptionLines(input.deprecationMessage ? `WARNING: Deprecated - ${input.deprecationMessage}` : undefined),
-        "",
-      ]),
+      ...(inputs.length ? formatTable(
+        tableWidth >= 60 ? ["Input", "Required", "Default"] : ["Input", "Configuration"],
+        inputs.map(([name, input]) => {
+          const required = input.required ? "Yes" : "No";
+          const defaultValue = input.default === undefined ? "(not set)" : JSON.stringify(input.default);
+          return tableWidth >= 60 ? [name, required, defaultValue]
+            : [name, `Required: ${required}\nDefault: ${defaultValue}`];
+        }), tableWidth,
+      ) : ["  No inputs declared."]),
+      "",
+      "  Defaults are quoted; (not set) means no default is declared.",
+      `  Full input descriptions: ${metadataUrl}`,
+      ...inputs.flatMap(([name, input]) => descriptionLines(
+        input.deprecationMessage ? `WARNING: Deprecated input ${name} - ${input.deprecationMessage}` : undefined,
+      )),
+      "",
       heading(`Outputs (${Object.keys(report.details.outputs).length})`),
       ...Object.entries(report.details.outputs).flatMap(([name, output]) => [
         `  Output ${name}`,

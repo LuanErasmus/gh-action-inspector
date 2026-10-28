@@ -69,7 +69,7 @@ describe("action-inspector CLI", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(result.stdout.join("\n")).toContain("Runtime: node20");
-    expect(result.stdout.join("\n")).toContain("Input token: required");
+    expect(result.stdout.join("\n")).toMatch(/\| token\s*\| Yes\s*\|/);
     expect(result.stdout.join("\n")).toContain("Output result\n    Result");
   });
 

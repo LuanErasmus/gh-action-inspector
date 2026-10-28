@@ -82,8 +82,14 @@ gh action-inspector github/codeql-action/analyze@v4 --details --json
 ```
 
 `--details` reads `action.yml` (or `action.yaml`) at the exact resolved commit
-and nested path. It shows runtime, required/optional inputs, defaults,
-descriptions, outputs, and deprecation messages. Missing or malformed metadata
+and nested path. Text output shows runtime and a compact inputs table with
+required status and defaults, followed by outputs and full deprecation warnings.
+Input descriptions are linked to the metadata file at the exact resolved commit
+instead of filling the terminal with long paragraphs. Use `--details --json`
+to include every input description in the report.
+Quoted `""` means an empty default; `(not set)` means no declared default.
+Below 60 columns, required status and defaults share a configuration column.
+Missing or malformed metadata
 is an error. Reusable workflows cannot be inspected with `--details`.
 
 ## Scan a repository
@@ -205,7 +211,7 @@ command. See [compatibility limits](pinning-and-upgrades.md#compatibility-checks
 
 Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
-inputs show descriptions, defaults, and deprecations on separate lines.
+inputs use a compact table; deprecation warnings remain outside the table.
 
 When terminal color support is detected, headings and statuses are colored.
 Single-reference inspection also uses status markers (✓, !, ✗); `!` avoids
