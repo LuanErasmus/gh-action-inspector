@@ -76,14 +76,20 @@ export function wrapText(text: string, width: number, continuation = "    "): st
   return result;
 }
 
-export function renderLines(lines: string[], options: DisplayOptions = {}): string[] {
+export function renderLines(
+  lines: string[],
+  options: DisplayOptions = {},
+  literalLines: ReadonlySet<string> = new Set(),
+): string[] {
   return lines.flatMap((line) => {
     const plain = stripVTControlCharacters(line);
     // Keep executable YAML and diff lines intact for copying or patch review.
-    const literal = /^\s*uses:|^[+-]|^@@/.test(plain);
+    const literal = literalLines.has(line) || /^\s*uses:|^[+-]|^@@/.test(plain);
     const wrapped = options.width === undefined || literal ? plain.split("\n") : wrapText(plain, options.width);
     if (!options.color) return wrapped;
-    const style = /\b(ERROR|Error|POLICY|Policy)\b/.test(plain) ? "red"
+    const style = /^\s*Before:$/.test(plain) ? "red"
+      : /^\s*After:$/.test(plain) ? "green"
+      : /\b(ERROR|Error|POLICY|Policy)\b/.test(plain) ? "red"
       : /\b(WARNING|Warning|Unpinned|Available|REVIEW)\b|! /.test(plain) ? "yellow"
       : /^\+[^+]|✓|\bPinned\b/.test(plain) ? "green"
       : /^-[^-]/.test(plain) ? "red"

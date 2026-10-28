@@ -11,9 +11,13 @@ gh action-inspector pin C:\path\to\repository --dry-run
 gh action-inspector pin --json
 ```
 
-`pin` defaults to preview mode (`--dry-run` is optional). The line-by-line diff
+`pin` defaults to preview mode (`--dry-run` is optional). File-grouped change
+cards show each affected line with explicit **Before** and **After** labels,
+blank space between changes, and a changed-line count per file. The preview
 replaces mutable or short-SHA references with the **full SHA of the current
 commit**. It does not select a newer release or require a published release.
+Upgrade previews use the same layout. Complete YAML lines remain unwrapped
+and copyable, including full SHAs; JSON retains the original change data.
 
 Apply the replacements explicitly:
 

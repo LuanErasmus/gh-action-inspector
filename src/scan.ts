@@ -444,17 +444,21 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   });
   const preview: string[] = [];
   const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? "" : "s"}`;
-  let previousFile: string | undefined;
+  const changesByFile = new Map<string, ScanReport["changes"]>();
   for (const change of report.changes) {
-    if (previousFile !== change.file) {
-      preview.push(`--- a/${change.file}`, `+++ b/${change.file}`);
-      previousFile = change.file;
+    const changes = changesByFile.get(change.file) ?? [];
+    changes.push(change);
+    changesByFile.set(change.file, changes);
+  }
+  for (const [file, changes] of changesByFile) {
+    preview.push("", file, `  ${count(changes.length, "changed line")}`);
+    for (const change of changes) {
+      preview.push(
+        "", `  Line ${change.line}`,
+        "    Before:", change.before,
+        "    After:", change.after,
+      );
     }
-    preview.push(
-      `@@ -${change.line} +${change.line} @@`,
-      `-${change.before}`,
-      `+${change.after}`,
-    );
   }
   const title = `${report.mode === "scan" ? "Workflow scan" : `${report.mode === "pin" ? "Pin" : "Upgrade"} ${report.written ? "result" : "preview"}`}: ${count(report.files, "file")}, ${count(report.rows.length, "reference")}`;
   const totals = [
@@ -496,6 +500,7 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
       "",
       "Changes",
       ...preview,
+      "",
       report.written
         ? `${count(report.written.length, "file")} written.`
         : report.changes.length
@@ -505,5 +510,5 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
     ...(report.rows.some((row) => ["local", "docker", "expression"].includes(row.status))
       ? ["Local references are followed when present; Docker references and expressions are not resolved or changed."]
       : []),
-  ], options);
+  ], options, new Set(report.changes.flatMap((change) => [change.before, change.after])));
 }

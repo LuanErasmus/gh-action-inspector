@@ -219,7 +219,7 @@ wide warning-emoji rendering issues. Colors and icons are disabled when output
 is redirected/piped or `NO_COLOR` is set.
 
 Prose, errors, long references, and URLs wrap to the terminal width (100 columns
-when the width is unavailable). Copyable `uses:` lines and patch lines are kept
+when the width is unavailable). Copyable `uses:` lines and Before/After YAML lines are kept
 intact, so these may exceed narrow windows. JSON output is unchanged and never
 contains display colors or presentation wrapping.
 
