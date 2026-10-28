@@ -59,21 +59,29 @@ Action Inspector focuses on answering one question:
 action-inspector actions/checkout@v4
 ```
 
-The command resolves the supplied reference against GitHub, retrieves the
-latest published release, and prints repository details, release notes, and a latest suggested version targeting that release:
+The command resolves the supplied reference (tag, branch, or commit SHA) against
+GitHub, finds the version tag that points to the resolved commit, and compares it
+with the latest published release:
 
 ```text
 Repository: actions/checkout
 Original reference: v4
 Reference type: tag
-Resolved commit SHA: <resolved-sha>
+Resolved commit SHA: 11d5960a326750d5838078e36cf38b85af677262
+Resolved version: v4.4.0
+Current SHA-pinned equivalent: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 License: MIT
 Archived: No
 Immutable: No
-Latest release: v6.0.0
-Release notes: https://github.com/actions/checkout/releases/tag/v6.0.0
-Latest suggested version: actions/checkout@<latest-release-sha> # v6.0.0
+Latest release: v7.0.1
+Release notes: https://github.com/actions/checkout/releases/tag/v7.0.1
+Newer version available: Yes (v7.0.1)
+Latest SHA-pinned release: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
+
+Passing a full commit SHA (for example,
+`actions/checkout@11d5960a326750d5838078e36cf38b85af677262`) shows the same
+details, including the version tag for that commit.
 
 ## 🗺️ Roadmap
 

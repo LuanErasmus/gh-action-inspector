@@ -2,6 +2,8 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { compareCommits } from "./compare-commits.js";
+import { findVersionTagForSha } from "./find-version-tag.js";
 import { getLatestRelease, type LatestRelease } from "./latest-release.js";
 import { parseActionReference } from "./parse-reference.js";
 import { generateShaPinnedReference } from "./pinned-reference.js";
@@ -21,12 +23,16 @@ interface CliDependencies {
   resolve: typeof resolveActionReference;
   getMetadata: typeof getRepositoryMetadata;
   getLatestRelease: typeof getLatestRelease;
+  findVersionTag: typeof findVersionTagForSha;
+  compareCommits: typeof compareCommits;
 }
 
 const defaultDependencies: CliDependencies = {
   resolve: resolveActionReference,
   getMetadata: getRepositoryMetadata,
   getLatestRelease,
+  findVersionTag: findVersionTagForSha,
+  compareCommits,
 };
 
 export async function runCli(
@@ -49,36 +55,41 @@ export async function runCli(
       dependencies.getMetadata(action),
     ]);
     const immutable = resolved.refType === "sha";
-    let latestRelease: LatestRelease | undefined;
-    let latestResolved: ResolvedActionReference | undefined;
-    if (!immutable) {
-      latestRelease = await dependencies.getLatestRelease(action);
-      latestResolved = await dependencies.resolve({
-        ...action,
-        ref: latestRelease.tagName,
-      });
-    }
+    const latestRelease: LatestRelease = await dependencies.getLatestRelease(action);
+    const [version, latestResolved]: [string | null, ResolvedActionReference] =
+      await Promise.all([
+        dependencies.findVersionTag(action, resolved.sha),
+        dependencies.resolve({ ...action, ref: latestRelease.tagName }),
+      ]);
+    const comparison = await dependencies.compareCommits(
+      action,
+      resolved.sha,
+      latestResolved.sha,
+    );
+    const newerAvailable = comparison === "ahead" || comparison === "diverged";
 
     output.stdout(`Repository: ${metadata.fullName}`);
     output.stdout(`Original reference: ${action.ref}`);
     output.stdout(`Reference type: ${resolved.refType}`);
     output.stdout(`Resolved commit SHA: ${resolved.sha}`);
+    output.stdout(`Resolved version: ${version ?? "Not found (no tag points to this commit)"}`);
     output.stdout(`Current SHA-pinned equivalent: ${metadata.fullName}@${resolved.sha}`);
     output.stdout(
       `License: ${metadata.license?.spdxId && metadata.license.spdxId !== "NOASSERTION" ? metadata.license.spdxId : metadata.license?.name ?? "Not detected"}`,
     );
     output.stdout(`Archived: ${metadata.archived ? "Yes" : "No"}`);
     output.stdout(`Immutable: ${immutable ? "Yes" : "No"}`);
-    if (latestRelease && latestResolved) {
-      output.stdout(`Latest release: ${latestRelease.tagName}`);
-      output.stdout(`Release notes: ${latestRelease.releaseNotesUrl}`);
-      output.stdout(
-        `Latest SHA-pinned release: ${generateShaPinnedReference(
-          { ...action, ref: latestRelease.tagName },
-          latestResolved.sha,
-        )}`,
-      );
-    }
+    output.stdout(`Latest release: ${latestRelease.tagName}`);
+    output.stdout(`Release notes: ${latestRelease.releaseNotesUrl}`);
+    output.stdout(
+      `Newer version available: ${newerAvailable ? `Yes (${latestRelease.tagName})` : "No"}`,
+    );
+    output.stdout(
+      `Latest SHA-pinned release: ${generateShaPinnedReference(
+        { ...action, ref: latestRelease.tagName },
+        latestResolved.sha,
+      )}`,
+    );
     return 0;
   } catch (error) {
     output.stderr(

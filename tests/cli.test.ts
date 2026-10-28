@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
+import type { CommitComparisonStatus } from "../src/compare-commits.js";
 
 const resolved = {
   sha: "a".repeat(40),
   refType: "tag" as const,
 };
+const latestSha = "c".repeat(40);
 const metadata = {
   fullName: "actions/checkout",
   license: { name: "MIT License", spdxId: "MIT" },
@@ -15,106 +17,130 @@ const latestRelease = {
   releaseNotesUrl: "https://github.com/actions/checkout/releases/tag/v6.0.0",
 };
 
-function run(args: string[], repositoryMetadata = metadata) {
+type Dependencies = NonNullable<Parameters<typeof runCli>[2]>;
+
+async function run(args: string[], overrides: Partial<Dependencies> = {}) {
   const stdout: string[] = [];
   const stderr: string[] = [];
-
-  return runCli(
+  const exitCode = await runCli(
     args,
     {
       stdout: (message) => stdout.push(message),
       stderr: (message) => stderr.push(message),
     },
     {
-      resolve: async () => resolved,
-      getMetadata: async () => repositoryMetadata,
+      resolve: async (action) =>
+        action.ref === latestRelease.tagName
+          ? { sha: latestSha, refType: "tag" }
+          : resolved,
+      getMetadata: async () => metadata,
       getLatestRelease: async () => latestRelease,
+      findVersionTag: async () => "v4.2.2",
+      compareCommits: async () => "ahead",
+      ...overrides,
     },
-  ).then((exitCode) => ({ exitCode, stdout, stderr }));
+  );
+  return { exitCode, stdout, stderr };
 }
 
 describe("action-inspector CLI", () => {
-  it("prints repository details, resolution, and the latest suggested version", async () => {
-    await expect(run(["actions/checkout@v6"])).resolves.toEqual({
-      exitCode: 0,
-      stdout: [
-        "Repository: actions/checkout",
-        "Original reference: v6",
-        "Reference type: tag",
-        `Resolved commit SHA: ${resolved.sha}`,
-        `Current SHA-pinned equivalent: actions/checkout@${resolved.sha}`,
-        "License: MIT",
-        "Archived: No",
-        "Immutable: No",
-        "Latest release: v6.0.0",
-        `Release notes: ${latestRelease.releaseNotesUrl}`,
-        `Latest SHA-pinned release: actions/checkout@${resolved.sha} # v6.0.0`,
-      ],
-      stderr: [],
-    });
-  });
-
-  it("uses the latest release tag and SHA for the suggestion and links its notes", async () => {
-    const latestSha = "c".repeat(40);
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const resolve = async (action: { ref: string }) =>
-      action.ref === "v4" ? resolved : { sha: latestSha, refType: "tag" as const };
-    const exitCode = await runCli(
-      ["actions/checkout@v4"],
-      {
-        stdout: (message) => stdout.push(message),
-        stderr: (message) => stderr.push(message),
-      },
-      {
-        resolve,
-        getMetadata: async () => metadata,
-        getLatestRelease: async () => latestRelease,
-      },
-    );
-
-    expect({ exitCode, stdout, stderr }).toEqual({
+  it("prints details, the resolved version, and the latest release", async () => {
+    await expect(run(["actions/checkout@v4"])).resolves.toEqual({
       exitCode: 0,
       stdout: [
         "Repository: actions/checkout",
         "Original reference: v4",
         "Reference type: tag",
         `Resolved commit SHA: ${resolved.sha}`,
+        "Resolved version: v4.2.2",
         `Current SHA-pinned equivalent: actions/checkout@${resolved.sha}`,
         "License: MIT",
         "Archived: No",
         "Immutable: No",
         "Latest release: v6.0.0",
         `Release notes: ${latestRelease.releaseNotesUrl}`,
+        "Newer version available: Yes (v6.0.0)",
         `Latest SHA-pinned release: actions/checkout@${latestSha} # v6.0.0`,
       ],
       stderr: [],
     });
   });
 
-  it("prints a nested action path", async () => {
-    await expect(
-      run(["owner/repository/path/to/action@main"], {
-        ...metadata,
-        fullName: "owner/repository",
+  it("resolves a SHA reference to its version and reports newer releases", async () => {
+    const sha = "b".repeat(40);
+    const calls: string[] = [];
+    const result = await run([`actions/checkout@${sha}`], {
+      resolve: async (action) =>
+        action.ref === sha
+          ? { sha, refType: "sha" }
+          : { sha: latestSha, refType: "tag" },
+      findVersionTag: async (_repository, commitSha) => {
+        calls.push(`tag:${commitSha}`);
+        return "v4.1.0";
+      },
+      compareCommits: async (_repository, base, head) => {
+        calls.push(`compare:${base}...${head}`);
+        return "ahead";
+      },
+      getMetadata: async () => ({
+        fullName: "actions/checkout",
+        license: null,
+        archived: true,
       }),
-    ).resolves.toEqual({
+    });
+
+    expect(calls).toEqual([`tag:${sha}`, `compare:${sha}...${latestSha}`]);
+    expect(result).toEqual({
       exitCode: 0,
       stdout: [
-        "Repository: owner/repository",
-        "Original reference: main",
-        "Reference type: tag",
-        `Resolved commit SHA: ${resolved.sha}`,
-        `Current SHA-pinned equivalent: owner/repository@${resolved.sha}`,
-        "License: MIT",
-        "Archived: No",
-        "Immutable: No",
+        "Repository: actions/checkout",
+        `Original reference: ${sha}`,
+        "Reference type: sha",
+        `Resolved commit SHA: ${sha}`,
+        "Resolved version: v4.1.0",
+        `Current SHA-pinned equivalent: actions/checkout@${sha}`,
+        "License: Not detected",
+        "Archived: Yes",
+        "Immutable: Yes",
         "Latest release: v6.0.0",
         `Release notes: ${latestRelease.releaseNotesUrl}`,
-        `Latest SHA-pinned release: owner/repository/path/to/action@${resolved.sha} # v6.0.0`,
+        "Newer version available: Yes (v6.0.0)",
+        `Latest SHA-pinned release: actions/checkout@${latestSha} # v6.0.0`,
       ],
       stderr: [],
     });
+  });
+
+  it.each<{ status: CommitComparisonStatus; expected: string }>([
+    { status: "identical", expected: "No" },
+    { status: "behind", expected: "No" },
+    { status: "ahead", expected: "Yes (v6.0.0)" },
+    { status: "diverged", expected: "Yes (v6.0.0)" },
+  ])("reports newer version availability when the latest release is $status", async ({ status, expected }) => {
+    const { stdout } = await run(["actions/checkout@v4"], {
+      compareCommits: async () => status,
+    });
+    expect(stdout).toContain(`Newer version available: ${expected}`);
+  });
+
+  it("reports when no tag points to the resolved commit", async () => {
+    const { stdout } = await run(["actions/checkout@main"], {
+      findVersionTag: async () => null,
+    });
+    expect(stdout).toContain(
+      "Resolved version: Not found (no tag points to this commit)",
+    );
+  });
+
+  it("prints a nested action path", async () => {
+    const { exitCode, stdout } = await run(
+      ["owner/repository/path/to/action@main"],
+      { getMetadata: async () => ({ ...metadata, fullName: "owner/repository" }) },
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(
+      `Latest SHA-pinned release: owner/repository/path/to/action@${latestSha} # v6.0.0`,
+    );
   });
 
   it.each([
@@ -138,115 +164,57 @@ describe("action-inspector CLI", () => {
     });
   });
 
-  it("reports resolution errors without printing partial output", async () => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const exitCode = await runCli(
-      ["actions/checkout@v6"],
-      {
-        stdout: (message) => stdout.push(message),
-        stderr: (message) => stderr.push(message),
-      },
-      {
+  it.each<{ description: string; overrides: Partial<Dependencies>; message: string }>([
+    {
+      description: "resolution",
+      overrides: {
         resolve: async () => {
           throw new Error('Could not find repository actions/checkout or ref "v6".');
         },
-        getMetadata: async () => metadata,
-        getLatestRelease: async () => latestRelease,
       },
-    );
-
-    expect({ exitCode, stdout, stderr }).toEqual({
-      exitCode: 1,
-      stdout: [],
-      stderr: ['Could not find repository actions/checkout or ref "v6".'],
-    });
-  });
-
-  it("omits a pin suggestion for an immutable SHA and handles missing license", async () => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const sha = "b".repeat(40);
-    const exitCode = await runCli(
-      [`actions/checkout@${sha}`],
-      {
-        stdout: (message) => stdout.push(message),
-        stderr: (message) => stderr.push(message),
-      },
-      {
-        resolve: async () => ({ sha, refType: "sha" }),
-        getMetadata: async () => ({
-          fullName: "actions/checkout",
-          license: null,
-          archived: true,
-        }),
-        getLatestRelease: async () => latestRelease,
-      },
-    );
-
-    expect({ exitCode, stdout, stderr }).toEqual({
-      exitCode: 0,
-      stdout: [
-        "Repository: actions/checkout",
-        `Original reference: ${sha}`,
-        "Reference type: sha",
-        `Resolved commit SHA: ${sha}`,
-        `Current SHA-pinned equivalent: actions/checkout@${sha}`,
-        "License: Not detected",
-        "Archived: Yes",
-        "Immutable: Yes",
-      ],
-      stderr: [],
-    });
-  });
-
-  it("reports metadata errors without printing partial output", async () => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const exitCode = await runCli(
-      ["actions/checkout@v6"],
-      {
-        stdout: (message) => stdout.push(message),
-        stderr: (message) => stderr.push(message),
-      },
-      {
-        resolve: async () => resolved,
+      message: 'Could not find repository actions/checkout or ref "v6".',
+    },
+    {
+      description: "metadata",
+      overrides: {
         getMetadata: async () => {
           throw new Error("GitHub API request failed with HTTP 403.");
         },
-        getLatestRelease: async () => latestRelease,
       },
-    );
-
-    expect({ exitCode, stdout, stderr }).toEqual({
-      exitCode: 1,
-      stdout: [],
-      stderr: ["GitHub API request failed with HTTP 403."],
-    });
-  });
-
-  it("reports when no latest published release is available", async () => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const exitCode = await runCli(
-      ["actions/checkout@v4"],
-      {
-        stdout: (message) => stdout.push(message),
-        stderr: (message) => stderr.push(message),
-      },
-      {
-        resolve: async () => resolved,
-        getMetadata: async () => metadata,
+      message: "GitHub API request failed with HTTP 403.",
+    },
+    {
+      description: "latest release",
+      overrides: {
         getLatestRelease: async () => {
           throw new Error("No latest published release was found for actions/checkout.");
         },
       },
-    );
-
-    expect({ exitCode, stdout, stderr }).toEqual({
+      message: "No latest published release was found for actions/checkout.",
+    },
+    {
+      description: "version lookup",
+      overrides: {
+        findVersionTag: async () => {
+          throw new Error("GitHub API returned an invalid tag list.");
+        },
+      },
+      message: "GitHub API returned an invalid tag list.",
+    },
+    {
+      description: "commit comparison",
+      overrides: {
+        compareCommits: async () => {
+          throw new Error("GitHub API request failed with HTTP 404.");
+        },
+      },
+      message: "GitHub API request failed with HTTP 404.",
+    },
+  ])("reports $description errors without printing partial output", async ({ overrides, message }) => {
+    await expect(run(["actions/checkout@v6"], overrides)).resolves.toEqual({
       exitCode: 1,
       stdout: [],
-      stderr: ["No latest published release was found for actions/checkout."],
+      stderr: [message],
     });
   });
 });
