@@ -1,0 +1,40 @@
+name: Bug Report
+description: Report something that isn't working as expected
+title: "[Bug]: "
+labels:
+  - bug
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Action Inspector!
+
+  - type: input
+    id: action
+    attributes:
+      label: Action reference
+      description: Which GitHub Action reference were you inspecting?
+      placeholder: actions/checkout@v4
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add any other useful information here.
