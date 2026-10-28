@@ -7,6 +7,7 @@ import { compareVersions, isVersionTag } from "./version.js";
 import { NoReleaseError } from "./latest-release.js";
 import { listVersionReleases, selectUpgrade, type UpgradePolicy } from "./release-candidates.js";
 import { compareActionDetails, inspectAction, inspectReusableWorkflow, type ActionDetailsComparison } from "./action-details.js";
+import { formatTable, renderLines, type DisplayOptions } from "./terminal.js";
 
 export interface Usage {
   file: string;
@@ -395,22 +396,52 @@ export async function scanRepository(
   return report;
 }
 
-export function formatScan(report: ScanReport): string[] {
-  const headers = report.mode === "pin"
-    ? ["Location", "Action reference", "Pin"]
-    : ["Location", "Action reference", "Current", "Pin", report.mode === "upgrade" ? "Target" : "Latest", "Update"];
-  const rows = report.rows.map((row) => {
-    const location = `${row.file}:${row.line}`;
-    const reference = row.reference.replace(/@([a-f0-9]{40})$/i, (_, sha: string) => `@${sha.slice(0, 7)}...`);
-    return report.mode === "pin"
-      ? [location, reference, row.status]
-      : [
-        location, reference, row.version ?? "-", row.status, row.latest ?? "-",
-        row.newerAvailable === undefined ? "-" : row.newerAvailable ? "Available" : "No",
+export function formatScan(report: ScanReport, options: DisplayOptions = {}): string[] {
+  const groups = new Map<string, ScanRow[]>();
+  for (const row of report.rows) {
+    const group = groups.get(row.file) ?? [];
+    group.push(row);
+    groups.set(row.file, group);
+  }
+  const width = Number.isFinite(options.width) ? Math.max(1, Math.floor(options.width!)) : 100;
+  const showVersions = report.mode !== "pin" && width >= 80;
+  const showStatus = width >= 32;
+  const versionHeader = report.mode === "upgrade" ? "Target" : "Latest";
+  const references = [...groups].flatMap(([file, rows]) => {
+    const status = (row: ScanRow) => row.status === "local" ? "Local dependency"
+      : row.status === "expression" ? "Dynamic / not resolved"
+      : row.status === "docker" ? "Docker / not resolved" : row.status;
+    const cells = rows.map((row) => {
+      const reference = row.reference.replace(/@([a-f0-9]{40})$/i, (_, sha: string) => `@${sha.slice(0, 7)}...`);
+      return [
+        `L${row.line}`, reference,
+        ...(showStatus ? [status(row)] : []),
+        ...(showVersions ? [row.version ?? "-", row.latest ?? "-"] : []),
       ];
+    });
+    const notes = rows.flatMap((row) => {
+      const details = [
+        ...(!showStatus ? [`Status: ${status(row)}`] : []),
+        ...(!showVersions && row.version ? [`Current: ${row.version}`] : []),
+        ...(!showVersions && row.latest ? [`${versionHeader}: ${row.latest}`] : []),
+        ...(row.newerAvailable ? ["Update: Available"] : []),
+        ...(report.mode === "scan" && row.status !== "Error" && row.publisher && row.newerAvailable === undefined
+          ? ["Update: Unknown"] : []),
+        ...(row.error ? [`ERROR: ${row.error}`] : []),
+        ...(row.warning ? [`WARNING: ${row.warning}`] : []),
+        ...(row.archived ? [`WARNING: ${row.reference} is archived.`] : []),
+      ];
+      return details.length ? [`  L${row.line}`, ...details.map((detail) => `    ${detail}`)] : [];
+    });
+    return [
+      "", file,
+      ...formatTable([
+        "Line", "Action", ...(showStatus ? ["Status"] : []),
+        ...(showVersions ? ["Current", versionHeader] : []),
+      ], cells, width),
+      ...(notes.length ? ["", ...notes] : []),
+    ];
   });
-  const widths = headers.map((header, i) => Math.max(header.length, ...rows.map((row) => row[i].length)));
-  const render = (row: string[]) => row.map((cell, i) => cell.padEnd(widths[i])).join("  ").trimEnd();
   const preview: string[] = [];
   const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? "" : "s"}`;
   let previousFile: string | undefined;
@@ -425,18 +456,26 @@ export function formatScan(report: ScanReport): string[] {
       `+${change.after}`,
     );
   }
-  return [
-    `${report.mode === "scan" ? "Workflow scan" : `${report.mode === "pin" ? "Pin" : "Upgrade"} ${report.written ? "result" : "preview"}`}: ${count(report.files, "file")}, ${count(rows.length, "reference")}`,
-    "",
-    ...(rows.length ? [render(headers), ...rows.map(render)] : ["No Action references found."]),
-    ...report.rows.filter((row) => row.archived).map((row) => `WARNING ${row.file}:${row.line}: ${row.reference} is archived.`),
-    ...report.rows.filter((row) => row.error).map((row) => `ERROR ${row.file}:${row.line}: ${row.error}`),
-    ...report.rows.filter((row) => row.warning).map((row) => `WARNING ${row.file}:${row.line}: ${row.warning}`),
+  const title = `${report.mode === "scan" ? "Workflow scan" : `${report.mode === "pin" ? "Pin" : "Upgrade"} ${report.written ? "result" : "preview"}`}: ${count(report.files, "file")}, ${count(report.rows.length, "reference")}`;
+  const totals = [
+    `${report.rows.filter((row) => row.status === "Pinned").length} pinned`,
+    `${report.rows.filter((row) => row.status === "Unpinned").length} unpinned`,
+    ...(report.mode === "scan" ? [`${report.rows.filter((row) => row.newerAvailable).length} updates available`] : []),
+    `${report.errors.length + report.rows.filter((row) => row.error).length} errors`,
+    ...(report.policyFailures?.length ? [count(report.policyFailures.length, "policy violation")] : []),
+  ].join(" | ");
+  return renderLines([
+    title,
+    totals,
+    ...(references.length ? references : ["", "No Action references found."]),
     ...report.rows.filter((row) => row.majorUpgrade).map((row) => `WARNING ${row.file}:${row.line}: major upgrade to ${row.target}; review release notes and compatibility.`),
     ...report.rows.filter((row) => row.target).flatMap((row) => {
       const comparison = row.compatibility;
       return [
-        `Release notes for ${row.reference}: ${row.releaseNotesUrl}`,
+        "",
+        `Upgrade review - ${row.file}:${row.line}`,
+        `  ${row.reference}`,
+        `  Release notes: ${row.releaseNotesUrl}`,
         ...(comparison ? [
           ...(comparison.runtimeChanged ? [`WARNING Runtime changes: ${comparison.runtimeBefore} -> ${comparison.runtimeAfter}`] : []),
           ...[
@@ -451,18 +490,11 @@ export function formatScan(report: ScanReport): string[] {
         ] : ["Reusable workflow upgrade: review workflow_call inputs, outputs, and release notes manually."]),
       ];
     }),
-    ...report.errors.map((error) => `ERROR ${error}`),
-    ...(report.policyFailures ?? []).map((failure) => `POLICY ${failure}`),
-    "",
-    [
-      `${report.rows.filter((row) => row.status === "Pinned").length} pinned`,
-      `${report.rows.filter((row) => row.status === "Unpinned").length} unpinned`,
-      ...(report.mode === "scan" ? [`${report.rows.filter((row) => row.newerAvailable).length} updates available`] : []),
-      `${report.errors.length + report.rows.filter((row) => row.error).length} errors`,
-      ...(report.policyFailures?.length ? [count(report.policyFailures.length, "policy violation")] : []),
-    ].join(", "),
+    ...(report.errors.length ? ["", "Discovery errors", ...report.errors.map((error) => `  ERROR: ${error}`)] : []),
+    ...(report.policyFailures?.length ? ["", "Policy findings", ...report.policyFailures.map((failure) => `  POLICY: ${failure}`)] : []),
     ...(report.mode !== "scan" ? [
       "",
+      "Changes",
       ...preview,
       report.written
         ? `${count(report.written.length, "file")} written.`
@@ -473,5 +505,5 @@ export function formatScan(report: ScanReport): string[] {
     ...(report.rows.some((row) => ["local", "docker", "expression"].includes(row.status))
       ? ["Local references are followed when present; Docker references and expressions are not resolved or changed."]
       : []),
-  ];
+  ], options);
 }

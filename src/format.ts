@@ -1,6 +1,6 @@
-import { styleText } from "node:util";
 import type { ActionReferenceType } from "./resolve-reference.js";
-import type { ActionDetails } from "./action-details.js";
+import type { ActionDetails, ActionDetailsComparison } from "./action-details.js";
+import { renderLines, type DisplayOptions } from "./terminal.js";
 
 export interface InspectionReport {
   action: string;
@@ -26,20 +26,21 @@ export interface InspectionReport {
   } | null;
 }
 
-type Style = Parameters<typeof styleText>[0];
 type Row = [label: string, value: string];
+
+function descriptionLines(description?: string): string[] {
+  return description?.trim().split(/\r?\n/).map((line) => line ? `    ${line}` : "") ?? [];
+}
 
 export function formatJson(report: InspectionReport): string {
   return JSON.stringify(report, null, 2);
 }
 
-export function formatText(report: InspectionReport, color: boolean): string[] {
-  const paint = (style: Style, text: string) =>
-    color ? styleText(style, text, { validateStream: false }) : text;
-  const good = (text: string) => paint("green", color ? `✓ ${text}` : text);
-  const warn = (text: string) => paint("yellow", color ? `⚠ ${text}` : text);
-  const bad = (text: string) => paint("red", color ? `✗ ${text}` : text);
-  const dim = (text: string) => paint("dim", text);
+export function formatText(report: InspectionReport, color: boolean, width?: number): string[] {
+  const good = (text: string) => color ? `✓ ${text}` : text;
+  const warn = (text: string) => color ? `! ${text}` : text;
+  const bad = (text: string) => color ? `✗ ${text}` : text;
+  const dim = (text: string) => text;
 
   const { reference, latestRelease } = report;
   const immutable =
@@ -78,10 +79,10 @@ export function formatText(report: InspectionReport, color: boolean): string[] {
 
   const labelWidth =
     Math.max(...sections.flatMap(([, rows]) => rows.map(([label]) => label.length))) + 2;
-  const heading = (text: string) => paint("bold", text);
+  const heading = (text: string) => text;
 
-  return [
-    paint(["bold", "cyan"], `${report.action}@${reference.original}`),
+  return renderLines([
+    `${report.action}@${reference.original}`,
     ...sections.flatMap(([title, rows]) => [
       "",
       heading(title),
@@ -89,15 +90,64 @@ export function formatText(report: InspectionReport, color: boolean): string[] {
     ]),
     "",
     heading(latestRelease ? "Pin to latest release" : "Pin current commit"),
-    `  ${paint("green", `uses: ${latestRelease?.pinned ?? reference.pinned}`)}`,
+    `  uses: ${latestRelease?.pinned ?? reference.pinned}`,
     ...(report.details ? [
       "",
       heading("Action metadata"),
       `  Runtime: ${report.details.runtime}`,
       `  File: ${report.details.path}`,
-      ...Object.entries(report.details.inputs).map(([name, input]) =>
-        `  Input ${name}: ${input.required ? "required" : "optional"}${input.default === undefined ? "" : `, default=${JSON.stringify(input.default)}`}${input.deprecationMessage ? `, DEPRECATED: ${input.deprecationMessage}` : ""}${input.description ? ` - ${input.description}` : ""}`),
-      ...Object.entries(report.details.outputs).map(([name, output]) => `  Output ${name}${output.description ? `: ${output.description}` : ""}`),
+      "",
+      heading(`Inputs (${Object.keys(report.details.inputs).length})`),
+      ...Object.entries(report.details.inputs).flatMap(([name, input]) => [
+        `  Input ${name}: ${input.required ? "required" : "optional"}`,
+        ...(input.default === undefined ? [] : [`    Default: ${JSON.stringify(input.default)}`]),
+        ...descriptionLines(input.description),
+        ...descriptionLines(input.deprecationMessage ? `WARNING: Deprecated - ${input.deprecationMessage}` : undefined),
+        "",
+      ]),
+      heading(`Outputs (${Object.keys(report.details.outputs).length})`),
+      ...Object.entries(report.details.outputs).flatMap(([name, output]) => [
+        `  Output ${name}`,
+        ...descriptionLines(output.description),
+        "",
+      ]),
     ] : []),
+  ], { color, width });
+}
+
+export function formatComparison(
+  before: string,
+  after: string,
+  comparison: ActionDetailsComparison,
+  releaseNotes: string,
+  options: DisplayOptions = {},
+): string[] {
+  const findings = [
+    ...(comparison.runtimeChanged ? [`  WARNING Runtime: ${comparison.runtimeBefore} -> ${comparison.runtimeAfter}`] : []),
+    ...comparison.addedRequiredInputsWithoutDefaults.map((input) => `  WARNING New required input without default: ${input}`),
+    ...comparison.newlyRequiredInputsWithoutDefaults.map((input) => `  WARNING Input now required without default: ${input}`),
+    ...comparison.removedInputs.map((input) => `  WARNING Removed input: ${input}`),
+    ...comparison.removedOutputs.map((output) => `  WARNING Removed output: ${output}`),
+    ...comparison.changedDefaults.flatMap((change) => [
+      `  WARNING Default changed: ${change.input}`,
+      `    Before: ${JSON.stringify(change.before) ?? "(unset)"}`,
+      `    After:  ${JSON.stringify(change.after) ?? "(unset)"}`,
+    ]),
+    ...comparison.deprecatedInputs.map((input) => `  WARNING Deprecated ${input.input}: ${input.deprecationMessage}`),
   ];
+  return renderLines([
+    "Action comparison",
+    `  Before: ${before}`,
+    `  After:  ${after}`,
+    "",
+    `Findings (${findings.filter((line) => line.startsWith("  WARNING")).length})`,
+    ...(findings.length ? findings : [
+      "  No interface or runtime changes detected.",
+      `  Runtime: ${comparison.runtimeAfter}`,
+    ]),
+    "",
+    "Manual review",
+    `  ${comparison.notice}`,
+    `  Release notes: ${releaseNotes}`,
+  ], options);
 }

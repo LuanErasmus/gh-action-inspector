@@ -25,7 +25,7 @@ const row = (label: string, value: string) => `  ${label.padEnd(15)}${value}`;
 async function run(
   args: string[],
   overrides: Partial<Dependencies> = {},
-  options: { color?: boolean; status?: (message: string | null) => void } = {},
+  options: { color?: boolean; width?: number; status?: (message: string | null) => void } = {},
 ) {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -52,6 +52,11 @@ async function run(
 }
 
 describe("action-inspector CLI", () => {
+  it("does not apply text wrapping or colors to JSON output", async () => {
+    const plain = await run(["actions/checkout@v4", "--json"]);
+    const narrow = await run(["actions/checkout@v4", "--json"], {}, { width: 20, color: true });
+    expect(narrow).toEqual(plain);
+  });
   const actionDetails = {
     path: "action.yml", sha: resolved.sha, name: "Example", runtime: "node20",
     inputs: { token: { required: true, description: "API token" } },
@@ -65,7 +70,7 @@ describe("action-inspector CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout.join("\n")).toContain("Runtime: node20");
     expect(result.stdout.join("\n")).toContain("Input token: required");
-    expect(result.stdout.join("\n")).toContain("Output result: Result");
+    expect(result.stdout.join("\n")).toContain("Output result\n    Result");
   });
 
   it("preserves commit inspection when the repository has no releases", async () => {
@@ -288,7 +293,7 @@ describe("action-inspector CLI", () => {
     const { stdout } = await run(["actions/checkout@v4"], {}, { color: true });
     const output = stdout.join("\n");
     expect(output).toContain("\x1b[");
-    expect(output).toContain("⚠ No (a tag can be moved)");
+    expect(output).toContain("! No (a tag can be moved)");
     expect(output).toContain("✓ No");
     expect(output.replace(/\x1b\[[0-9;]*m/g, "")).toContain(
       `uses: actions/checkout@${latestSha} # v6.0.0`,

@@ -97,10 +97,29 @@ gh action-inspector scan C:\path\to\repository
 gh action-inspector scan --json
 ```
 
-The directory defaults to the current working directory. The table shows each
-reference's file/line, current version, pin status, latest release, and update
-availability. Archived repositories are flagged. Full SHAs are abbreviated in
-the table but retained in JSON.
+The directory defaults to the current working directory. Results use a compact
+table per workflow or local Action file. Summary totals appear first, followed
+by line numbers, Action references, pin status, and current/latest versions.
+Update notices, errors, and warnings appear below each table, labeled with the
+affected line number; discovery errors and CI policy findings have separate sections.
+Full SHAs are abbreviated in the summary but retained in JSON.
+Long cell values wrap within their columns rather than being truncated.
+Below 80 columns, version details move below the table to keep it readable.
+Pin previews omit version columns; upgrade tables show `Target` instead of `Latest`.
+
+```text
+Workflow scan: 1 file, 2 references
+1 pinned | 1 unpinned | 1 updates available | 0 errors
+
+.github\workflows\ci.yml
+  | Line | Action                       | Status   | Current | Latest |
+  |------|------------------------------|----------|---------|--------|
+  | L16  | actions/checkout@3d3c42e...   | Pinned   | v7.0.1  | v7.0.1 |
+  | L20  | actions/setup-node@v6        | Unpinned | v6.0.0  | v7.1.0 |
+
+  L20
+    Update: Available
+```
 
 ### Discovery scope
 
@@ -182,9 +201,19 @@ command. See [compatibility limits](pinning-and-upgrades.md#compatibility-checks
 | `--dry-run` | Explicitly request the default pin/upgrade preview |
 | `--write` | Apply pin/upgrade changes; cannot be combined with `--dry-run` |
 
-Interactive single-reference output uses colors and status icons (✓, ⚠, ✗),
-with a transient progress message while GitHub is queried. Colors and icons
-are disabled when output is redirected/piped or `NO_COLOR` is set.
+Reports use consistent sections and terminal-aware wrapping. Comparisons group
+compatibility findings separately from manual-review guidance. Detailed Action
+inputs show descriptions, defaults, and deprecations on separate lines.
+
+When terminal color support is detected, headings and statuses are colored.
+Single-reference inspection also uses status markers (✓, !, ✗); `!` avoids
+wide warning-emoji rendering issues. Colors and icons are disabled when output
+is redirected/piped or `NO_COLOR` is set.
+
+Prose, errors, long references, and URLs wrap to the terminal width (100 columns
+when the width is unavailable). Copyable `uses:` lines and patch lines are kept
+intact, so these may exceed narrow windows. JSON output is unchanged and never
+contains display colors or presentation wrapping.
 
 ### JSON reports
 

@@ -15,6 +15,7 @@ async function main(): Promise<number> {
     stdout: console.log,
     stderr: console.error,
     color: Boolean(process.stdout.isTTY && process.stdout.hasColors?.()),
+    width: process.stdout.columns || 100,
     status: process.stderr.isTTY
       ? (message) => process.stderr.write(message === null ? "\r\x1b[K" : `\r\x1b[K${message}`)
       : undefined,

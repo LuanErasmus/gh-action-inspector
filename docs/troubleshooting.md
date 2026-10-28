@@ -109,9 +109,13 @@ Do not treat successful rows in an error report as a complete write plan.
 
 ## Terminal appearance
 
-Single-reference inspection uses colors/icons only when terminal color support
-is detected. Piping or redirecting output disables them. Set `NO_COLOR` to
-request plain output. Use `--json` for scripts rather than parsing a table.
+Scan, pin, and upgrade reports use compact tables per file, with line-labeled
+diagnostics below each table. Long values wrap inside cells; version columns
+move below the table in narrow terminals. Reports wrap explanatory text to the terminal width.
+Colors are used only when terminal color support is detected. Piping or
+redirecting output disables colors and inspection icons. Set `NO_COLOR` to
+request plain output. Use `--json` for scripts rather than parsing the report.
+Copyable YAML and patch lines remain unwrapped intentionally.
 
 ## Installed extension differs from the local build
 

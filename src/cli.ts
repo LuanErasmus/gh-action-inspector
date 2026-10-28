@@ -1,6 +1,6 @@
 import { compareCommits } from "./compare-commits.js";
 import { findVersionTagForSha } from "./find-version-tag.js";
-import { formatJson, formatText, type InspectionReport } from "./format.js";
+import { formatComparison, formatJson, formatText, type InspectionReport } from "./format.js";
 import { getLatestRelease, NoReleaseError, type LatestRelease } from "./latest-release.js";
 import { parseActionReference } from "./parse-reference.js";
 import { generateShaPinnedReference } from "./pinned-reference.js";
@@ -15,6 +15,7 @@ import { formatScan, scanRepository } from "./scan.js";
 import { listVersionReleases } from "./release-candidates.js";
 import { parseRepositoryOptions } from "./command-options.js";
 import { compareActionDetails, inspectAction, inspectReusableWorkflow } from "./action-details.js";
+import { renderLines } from "./terminal.js";
 
 interface CliOutput {
   stdout: (message: string) => void;
@@ -23,6 +24,7 @@ interface CliOutput {
   status?: (message: string | null) => void;
   /** Whether colors and status icons may be used. */
   color?: boolean;
+  width?: number;
 }
 
 const USAGE = "Usage: action-inspector [--json] <owner/repository[/path]@ref>";
@@ -51,6 +53,11 @@ export async function runCli(
   output: CliOutput,
   dependencies: CliDependencies = defaultDependencies,
 ): Promise<number> {
+  const stderr = output.stderr;
+  output = {
+    ...output,
+    stderr: (message) => renderLines([message], output).forEach((line) => stderr(line)),
+  };
   if (args[0] === "compare") {
     if (args.includes("--help") || args.includes("-h")) {
       output.stdout("Usage: action-inspector compare <action@before> <action@after> [--json]");
@@ -79,18 +86,8 @@ export async function runCli(
         releaseNotes: `https://github.com/${after.owner}/${after.repository}/releases`,
       };
       if (args.includes("--json")) output.stdout(JSON.stringify(report, null, 2));
-      else {
-        output.stdout(`${references[0]} -> ${references[1]}`);
-        output.stdout(`Runtime: ${comparison.runtimeBefore} -> ${comparison.runtimeAfter}`);
-        output.stdout(`New required inputs without defaults: ${comparison.addedRequiredInputsWithoutDefaults.join(", ") || "none"}`);
-        output.stdout(`Existing inputs now required without defaults: ${comparison.newlyRequiredInputsWithoutDefaults.join(", ") || "none"}`);
-        output.stdout(`Removed inputs: ${comparison.removedInputs.join(", ") || "none"}`);
-        output.stdout(`Removed outputs: ${comparison.removedOutputs.join(", ") || "none"}`);
-        comparison.changedDefaults.forEach((change) => output.stdout(`Default ${change.input}: ${JSON.stringify(change.before) ?? "(unset)"} -> ${JSON.stringify(change.after) ?? "(unset)"}`));
-        comparison.deprecatedInputs.forEach((input) => output.stdout(`Deprecated ${input.input}: ${input.deprecationMessage}`));
-        output.stdout(`Release notes: ${report.releaseNotes}`);
-        output.stdout(comparison.notice);
-      }
+      else formatComparison(references[0], references[1], comparison, report.releaseNotes, output)
+        .forEach((line) => output.stdout(line));
       return 0;
     } catch (error) {
       output.stderr(error instanceof Error ? error.message : "Could not compare Actions.");
@@ -112,7 +109,7 @@ export async function runCli(
       if (parsed.json) {
         output.stdout(JSON.stringify(report, null, 2));
       } else {
-        formatScan(report).forEach((line) => output.stdout(line));
+        formatScan(report, output).forEach((line) => output.stdout(line));
       }
       return report.errors.length || report.rows.some((row) => row.error) || report.policyFailures?.length ? 1 : 0;
     } catch (error) {
@@ -213,7 +210,7 @@ export async function runCli(
     if (json) {
       output.stdout(formatJson(report));
     } else {
-      formatText(report, output.color ?? false).forEach((line) => output.stdout(line));
+      formatText(report, output.color ?? false, output.width).forEach((line) => output.stdout(line));
     }
     return 0;
   } catch (error) {
