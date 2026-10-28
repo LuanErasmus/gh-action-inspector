@@ -9,11 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  release:
-    name: Verify and publish GitHub Release
+  verify:
+    name: Verify release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,11 +41,81 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Build
-        run: npm run build
+  build:
+    name: Build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-amd64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: windows-latest
+            target: windows-amd64
+          - runner: windows-11-arm
+            target: windows-arm64
+          - runner: macos-15-intel
+            target: darwin-amd64
+          - runner: macos-latest
+            target: darwin-arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build standalone executable
+        run: npm run build:executable
+
+      - name: Smoke-test executable
+        shell: bash
+        run: |
+          set +e
+          output="$(./release/gh-action-inspector-${{ matrix.target }}* not-a-reference 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 1 ] || [[ "$output" != *"Action reference must include a ref"* ]]; then
+            echo "::error::Executable did not run as expected"
+            exit 1
+          fi
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: gh-action-inspector-${{ matrix.target }}
+          path: release/gh-action-inspector-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: gh-action-inspector-*
+          merge-multiple: true
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+        run: |
+          gh release create "$TAG" release/* \
+            --verify-tag --generate-notes --title "$TAG"

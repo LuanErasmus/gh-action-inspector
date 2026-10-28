@@ -32,8 +32,11 @@ git push --follow-tags
 
 `npm version` updates `package.json` and `package-lock.json`, commits the
 change, and creates a matching `vX.Y.Z` tag. The workflow verifies that the
-tag matches `package.json`, runs the tests, type-check, and build, and then
-creates a GitHub Release with automatically generated release notes.
+tag matches `package.json`, runs the tests and type-check, builds a standalone
+executable for each supported platform, and then creates a GitHub Release with
+the executables attached and automatically generated release notes. The GitHub
+CLI uses these release assets when users run
+`gh extension install LuanErasmus/gh-action-inspector`.
 
 Please avoid including credentials, tokens, or other sensitive information in
 code, issues, or pull requests.

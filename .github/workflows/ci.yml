@@ -32,3 +32,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Build standalone executable
+        run: npm run build:executable

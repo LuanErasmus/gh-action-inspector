@@ -1,7 +1,3 @@
-#!/usr/bin/env node
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { compareCommits } from "./compare-commits.js";
 import { findVersionTagForSha } from "./find-version-tag.js";
 import { getLatestRelease, type LatestRelease } from "./latest-release.js";
@@ -97,15 +93,4 @@ export async function runCli(
     );
     return 1;
   }
-}
-
-if (
-  process.argv[1] &&
-  realpathSync(resolve(process.argv[1])) ===
-    realpathSync(fileURLToPath(import.meta.url))
-) {
-  process.exitCode = await runCli(process.argv.slice(2), {
-    stdout: console.log,
-    stderr: console.error,
-  });
 }

@@ -16,7 +16,8 @@ coverage/
 
 # Build output
 dist/
-build/Release
+build/
+release/
 
 # TypeScript cache
 *.tsbuildinfo

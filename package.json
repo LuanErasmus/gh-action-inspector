@@ -1,18 +1,21 @@
 {
-  "name": "action-inspector",
+  "name": "gh-action-inspector",
   "version": "0.1.1",
   "private": true,
   "type": "module",
   "bin": {
-    "action-inspector": "dist/cli.js"
+    "action-inspector": "dist/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "build:executable": "node scripts/build-executable.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"
   }

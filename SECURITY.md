@@ -4,7 +4,7 @@
 
 Please do not report security vulnerabilities in public issues or pull requests.
 Instead, use GitHub's **Report a vulnerability** option on the
-[Security tab](https://github.com/LuanErasmus/action-inspector/security) to
+[Security tab](https://github.com/LuanErasmus/gh-action-inspector/security) to
 contact the repository maintainer privately.
 
 Include a description of the vulnerability, steps to reproduce it, and its
