@@ -79,8 +79,13 @@ gh extension upgrade action-inspector
 gh extension remove action-inspector
 ```
 
-Public repositories can be inspected without authentication. Set `GITHUB_TOKEN`
-to authenticate and help avoid GitHub API rate limits.
+Action Inspector automatically uses your GitHub CLI login (`gh auth login`),
+including when run directly with Node.js. No token environment variable is
+required. If set, `GH_TOKEN` takes precedence over `GITHUB_TOKEN`, followed by
+the stored credentials from `gh auth token --hostname github.com`.
+
+Public repositories can still be inspected without authentication when GitHub CLI
+is unavailable or not logged in, but GitHub's unauthenticated rate limits apply.
 
 ## 🧪 Examples
 

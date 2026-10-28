@@ -137,6 +137,7 @@ describe("resolveActionReference", () => {
   });
 
   it("can resolve public repositories without authentication", async () => {
+    vi.stubEnv("GH_TOKEN", "");
     vi.stubEnv("GITHUB_TOKEN", "");
     const fetch = mockFetch({
       "https://api.github.com/repos/actions/checkout/git/ref/tags/v4": response({
@@ -156,6 +157,7 @@ describe("resolveActionReference", () => {
   });
 
   it("uses GITHUB_TOKEN from the environment", async () => {
+    vi.stubEnv("GH_TOKEN", "");
     vi.stubEnv("GITHUB_TOKEN", "environment-token");
     const fetch = mockFetch({
       "https://api.github.com/repos/actions/checkout/git/ref/tags/v4": response({
@@ -265,7 +267,7 @@ describe("resolveActionReference", () => {
     const fetch = vi.fn(async () => response({ message: "Rate limit exceeded" }, 403));
 
     await expect(resolveActionReference(reference, { fetch })).rejects.toThrow(
-      "GitHub API request failed with HTTP 403 (rate limit or access denied). Set GITHUB_TOKEN to authenticate.",
+      "GitHub API request failed with HTTP 403 (rate limit or access denied). Check `gh auth status --hostname github.com`, or set GH_TOKEN or GITHUB_TOKEN.",
     );
   });
 });

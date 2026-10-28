@@ -17,7 +17,7 @@ const API_URL = "https://api.github.com";
 
 export function createGitHubApiClient(options: GitHubApiOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch;
-  const token = options.token ?? process.env.GITHUB_TOKEN;
+  const token = options.token ?? (process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
 
   return {
     async getRepositoryJson(
@@ -41,7 +41,7 @@ export function createGitHubApiClient(options: GitHubApiOptions = {}) {
       if (!response.ok) {
         throw new GitHubApiError(
           response.status === 403
-            ? "GitHub API request failed with HTTP 403 (rate limit or access denied). Set GITHUB_TOKEN to authenticate."
+            ? "GitHub API request failed with HTTP 403 (rate limit or access denied). Check `gh auth status --hostname github.com`, or set GH_TOKEN or GITHUB_TOKEN."
             : `GitHub API request failed with HTTP ${response.status}.`,
           response.status,
         );
