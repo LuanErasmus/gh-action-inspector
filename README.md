@@ -90,6 +90,7 @@ Action Inspector accepts any reference you can use in `uses:`:
 gh action-inspector actions/checkout@v4                                        # tag
 gh action-inspector actions/checkout@main                                      # branch
 gh action-inspector actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # commit SHA
+gh action-inspector actions/checkout@11d5960                                   # short commit SHA
 gh action-inspector github/codeql-action/analyze@v3                            # Action in a subdirectory
 ```
 
@@ -160,7 +161,10 @@ Pin to latest release
   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
 
-The SHA must be the full 40-character commit SHA. If no tag points to the
+You can also pass a short SHA of at least 6 characters (for example `11d5960`).
+It is expanded to the full SHA. Tags and branches with the same name take
+precedence. GitHub Actions does not accept short SHAs in `uses:`, so use the
+`SHA-pinned` line from the output instead. If no tag points to the
 commit, `Version` shows `Not found (no tag points to this commit)`.
 
 ### Terminal output

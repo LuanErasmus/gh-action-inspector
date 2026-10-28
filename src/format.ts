@@ -1,11 +1,12 @@
 import { styleText } from "node:util";
+import type { ActionReferenceType } from "./resolve-reference.js";
 
 export interface InspectionReport {
   action: string;
   repository: string;
   reference: {
     original: string;
-    type: "tag" | "branch" | "sha";
+    type: ActionReferenceType;
     sha: string;
     version: string | null;
     immutable: boolean;
@@ -38,17 +39,20 @@ export function formatText(report: InspectionReport, color: boolean): string[] {
   const dim = (text: string) => paint("dim", text);
 
   const { reference, latestRelease } = report;
+  const immutable =
+    reference.type === "short-sha"
+      ? warn("No (short SHAs can't be used in uses:, pin the full SHA)")
+      : reference.immutable
+        ? good("Yes")
+        : warn(`No (a ${reference.type} can be moved)`);
   const sections: [title: string, rows: Row[]][] = [
     [
       "Reference",
       [
-        ["Type", reference.type],
+        ["Type", reference.type === "short-sha" ? "short SHA" : reference.type],
         ["Commit SHA", dim(reference.sha)],
         ["Version", reference.version ?? warn("Not found (no tag points to this commit)")],
-        [
-          "Immutable",
-          reference.immutable ? good("Yes") : warn(`No (a ${reference.type} can be moved)`),
-        ],
+        ["Immutable", immutable],
         ["SHA-pinned", reference.pinned],
       ],
     ],

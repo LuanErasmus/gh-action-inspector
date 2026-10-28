@@ -5,7 +5,7 @@ import {
   type GitHubApiOptions,
 } from "./github-api.js";
 
-export type ActionReferenceType = "tag" | "branch" | "sha";
+export type ActionReferenceType = "tag" | "branch" | "sha" | "short-sha";
 
 export interface ResolvedActionReference {
   sha: string;
@@ -24,6 +24,7 @@ interface GitReference {
 }
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const SHORT_SHA_PATTERN = /^[0-9a-f]{6,39}$/i;
 
 export async function resolveActionReference(
   reference: Pick<ParsedActionReference, "owner" | "repository" | "ref">,
@@ -162,6 +163,27 @@ export async function resolveActionReference(
     const branchSha = await resolveBranch(ref);
     if (branchSha) {
       return { sha: branchSha, refType: "branch" };
+    }
+
+    // Tags and branches win over abbreviated SHAs, matching how Git resolves
+    // ambiguous names.
+    if (SHORT_SHA_PATTERN.test(ref)) {
+      try {
+        const commit = await getJson(`/commits/${encodeURIComponent(ref)}`);
+        const sha = readCommitSha(commit);
+        if (!sha.toLowerCase().startsWith(ref.toLowerCase())) {
+          throw new Error("GitHub API returned a commit that does not match the short SHA.");
+        }
+        return { sha, refType: "short-sha" };
+      } catch (error) {
+        // GitHub responds with 422 when no (or more than one) commit matches.
+        if (
+          !(error instanceof GitHubApiError) ||
+          (error.status !== 404 && error.status !== 422)
+        ) {
+          throw error;
+        }
+      }
     }
   }
 

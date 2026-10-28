@@ -190,6 +190,77 @@ describe("resolveActionReference", () => {
     ).rejects.toThrow(`Commit ${commitSha} was not found in repository actions/checkout.`);
   });
 
+  describe("short commit SHAs", () => {
+    const fullSha = "3d3c42e5aac5ba805825da76410c181273ba90b1";
+    const base = "https://api.github.com/repos/actions/checkout";
+
+    it.each(["3d3c42", "3d3c42e", "3D3C42E5AAC5"])(
+      "resolves %s after trying tags and branches",
+      async (shortSha) => {
+        const fetch = mockFetch({
+          [`${base}/commits/${shortSha}`]: response({ sha: fullSha }),
+        });
+
+        await expect(
+          resolveActionReference({ ...reference, ref: shortSha }, { fetch }),
+        ).resolves.toEqual({ sha: fullSha, refType: "short-sha" });
+        expect(vi.mocked(fetch!).mock.calls.map(([url]) => String(url))).toEqual([
+          `${base}/git/ref/tags/${shortSha}`,
+          `${base}/git/ref/heads/${shortSha}`,
+          `${base}/commits/${shortSha}`,
+        ]);
+      },
+    );
+
+    it("prefers a tag or branch with a SHA-like name", async () => {
+      const fetch = mockFetch({
+        [`${base}/git/ref/heads/deadbeef`]: response({
+          object: { sha: commitSha, type: "commit" },
+        }),
+      });
+
+      await expect(
+        resolveActionReference({ ...reference, ref: "deadbeef" }, { fetch }),
+      ).resolves.toEqual({ sha: commitSha, refType: "branch" });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(["3d3c4", "3d3c42z", "not-a-sha"])(
+      "does not look up %s as a commit",
+      async (ref) => {
+        const fetch = mockFetch({});
+
+        await expect(
+          resolveActionReference({ ...reference, ref }, { fetch }),
+        ).rejects.toThrow(`Could not find repository actions/checkout or ref "${ref}".`);
+        expect(fetch).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it.each([404, 422])(
+      "reports an unknown or ambiguous short SHA (HTTP %i) as not found",
+      async (status) => {
+        const fetch = mockFetch({
+          [`${base}/commits/ffffff1`]: response({ message: "No commit found" }, status),
+        });
+
+        await expect(
+          resolveActionReference({ ...reference, ref: "ffffff1" }, { fetch }),
+        ).rejects.toThrow('Could not find repository actions/checkout or ref "ffffff1".');
+      },
+    );
+
+    it("rejects a commit that does not start with the short SHA", async () => {
+      const fetch = mockFetch({
+        [`${base}/commits/3d3c42`]: response({ sha: commitSha }),
+      });
+
+      await expect(
+        resolveActionReference({ ...reference, ref: "3d3c42" }, { fetch }),
+      ).rejects.toThrow("GitHub API returned a commit that does not match the short SHA.");
+    });
+  });
+
   it("does not hide GitHub API errors other than not found", async () => {
     const fetch = vi.fn(async () => response({ message: "Rate limit exceeded" }, 403));
 

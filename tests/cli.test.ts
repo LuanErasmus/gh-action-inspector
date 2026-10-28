@@ -180,6 +180,25 @@ describe("action-inspector CLI", () => {
     );
   });
 
+  it("expands a short SHA to a full SHA-pinned reference", async () => {
+    const { exitCode, stdout } = await run(["actions/checkout@aaaaaaa"], {
+      resolve: async (action) =>
+        action.ref === latestRelease.tagName
+          ? { sha: latestSha, refType: "tag" }
+          : { sha: resolved.sha, refType: "short-sha" },
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout).toEqual(
+      expect.arrayContaining([
+        "actions/checkout@aaaaaaa",
+        row("Type", "short SHA"),
+        row("Commit SHA", resolved.sha),
+        row("Immutable", "No (short SHAs can't be used in uses:, pin the full SHA)"),
+        row("SHA-pinned", `actions/checkout@${resolved.sha} # v4.2.2`),
+      ]),
+    );
+  });
+
   it("prints a nested action path", async () => {
     const { exitCode, stdout } = await run(
       ["owner/repository/path/to/action@main"],
