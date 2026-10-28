@@ -95,15 +95,12 @@ describe("getLatestRelease", () => {
       ]);
     });
 
-    it("falls back to the latest release when no release has a version tag", async () => {
+    it("does not recommend an unrelated release when no Action release exists", async () => {
       await expect(
         getLatestRelease(codeql, {
           fetch: routedFetch(release("nightly"), [release("nightly")]),
         }),
-      ).resolves.toEqual({
-        tagName: "nightly",
-        releaseNotesUrl: "https://github.com/github/codeql-action/releases/tag/nightly",
-      });
+      ).rejects.toThrow("No numeric Action release was found");
     });
 
     it("rejects an invalid release list", async () => {

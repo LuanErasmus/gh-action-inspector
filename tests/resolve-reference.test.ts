@@ -248,7 +248,7 @@ describe("resolveActionReference", () => {
 
         await expect(
           resolveActionReference({ ...reference, ref: "ffffff1" }, { fetch }),
-        ).rejects.toThrow('Could not find repository actions/checkout or ref "ffffff1".');
+        ).rejects.toThrow("Short SHA ffffff1 could not be resolved uniquely");
       },
     );
 

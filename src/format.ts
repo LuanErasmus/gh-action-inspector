@@ -1,5 +1,6 @@
 import { styleText } from "node:util";
 import type { ActionReferenceType } from "./resolve-reference.js";
+import type { ActionDetails } from "./action-details.js";
 
 export interface InspectionReport {
   action: string;
@@ -14,13 +15,15 @@ export interface InspectionReport {
   };
   license: string;
   archived: boolean;
+  details?: ActionDetails;
+  warning?: string;
   latestRelease: {
     version: string;
     sha: string;
     releaseNotesUrl: string;
     newerAvailable: boolean;
     pinned: string;
-  };
+  } | null;
 }
 
 type Style = Parameters<typeof styleText>[0];
@@ -64,20 +67,14 @@ export function formatText(report: InspectionReport, color: boolean): string[] {
         ["Archived", report.archived ? bad("Yes (no longer maintained)") : good("No")],
       ],
     ],
-    [
-      "Latest release",
-      [
-        ["Version", latestRelease.version],
-        [
-          "Newer version",
-          latestRelease.newerAvailable
-            ? warn(`Yes (${reference.version ?? reference.original} → ${latestRelease.version})`)
-            : good("No"),
-        ],
-        ["Release notes", dim(latestRelease.releaseNotesUrl)],
-      ],
-    ],
   ];
+  sections.push(["Latest release", latestRelease ? [
+    ["Version", latestRelease.version],
+    ["Newer version", latestRelease.newerAvailable
+      ? warn(`Yes (${reference.version ?? reference.original} → ${latestRelease.version})`)
+      : good("No")],
+    ["Release notes", dim(latestRelease.releaseNotesUrl)],
+  ] : [["Status", warn(report.warning ?? "No published release; update availability is unknown.")]]]);
 
   const labelWidth =
     Math.max(...sections.flatMap(([, rows]) => rows.map(([label]) => label.length))) + 2;
@@ -91,7 +88,16 @@ export function formatText(report: InspectionReport, color: boolean): string[] {
       ...rows.map(([label, value]) => `  ${dim(label.padEnd(labelWidth))}${value}`),
     ]),
     "",
-    heading("Pin to latest release"),
-    `  ${paint("green", `uses: ${latestRelease.pinned}`)}`,
+    heading(latestRelease ? "Pin to latest release" : "Pin current commit"),
+    `  ${paint("green", `uses: ${latestRelease?.pinned ?? reference.pinned}`)}`,
+    ...(report.details ? [
+      "",
+      heading("Action metadata"),
+      `  Runtime: ${report.details.runtime}`,
+      `  File: ${report.details.path}`,
+      ...Object.entries(report.details.inputs).map(([name, input]) =>
+        `  Input ${name}: ${input.required ? "required" : "optional"}${input.default === undefined ? "" : `, default=${JSON.stringify(input.default)}`}${input.deprecationMessage ? `, DEPRECATED: ${input.deprecationMessage}` : ""}${input.description ? ` - ${input.description}` : ""}`),
+      ...Object.entries(report.details.outputs).map(([name, output]) => `  Output ${name}${output.description ? `: ${output.description}` : ""}`),
+    ] : []),
   ];
 }

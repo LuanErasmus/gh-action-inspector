@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
 import type { CommitComparisonStatus } from "../src/compare-commits.js";
+import { NoReleaseError } from "../src/latest-release.js";
 
 const resolved = {
   sha: "a".repeat(40),
@@ -51,6 +52,51 @@ async function run(
 }
 
 describe("action-inspector CLI", () => {
+  const actionDetails = {
+    path: "action.yml", sha: resolved.sha, name: "Example", runtime: "node20",
+    inputs: { token: { required: true, description: "API token" } },
+    outputs: { result: { description: "Result" } },
+  };
+
+  it("shows Action runtime, inputs, and outputs with --details", async () => {
+    const result = await run(["actions/checkout@v4", "--details"], {
+      inspectAction: async () => actionDetails,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.join("\n")).toContain("Runtime: node20");
+    expect(result.stdout.join("\n")).toContain("Input token: required");
+    expect(result.stdout.join("\n")).toContain("Output result: Result");
+  });
+
+  it("preserves commit inspection when the repository has no releases", async () => {
+    const result = await run(["actions/checkout@v4", "--json"], {
+      getLatestRelease: async () => { throw new NoReleaseError("No published release"); },
+    });
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(result.stdout[0]);
+    expect(report.latestRelease).toBeNull();
+    expect(report.warning).toBe("No published release");
+    expect(report.reference.sha).toBe(resolved.sha);
+  });
+
+  it("compares Action metadata and reports required manual review", async () => {
+    const result = await run(["compare", "actions/checkout@v4", "actions/checkout@v6.0.0", "--json"], {
+      inspectAction: async (_action, sha) => ({
+        ...actionDetails, sha, runtime: sha === latestSha ? "node24" : "node20",
+      }),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout[0]).comparison).toMatchObject({
+      runtimeChanged: true, runtimeBefore: "node20", runtimeAfter: "node24",
+      notice: expect.stringContaining("cannot guarantee compatibility"),
+    });
+  });
+
+  it("refuses to compare unrelated Actions", async () => {
+    const result = await run(["compare", "owner/first@v1", "owner/second@v2"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr[0]).toContain("same Action");
+  });
   it("prints details, the resolved version, and the latest release", async () => {
     await expect(run(["actions/checkout@v4"])).resolves.toEqual({
       exitCode: 0,
@@ -270,7 +316,16 @@ describe("action-inspector CLI", () => {
   it.each([["--help"], ["-h"]])("prints usage for %s", async (flag) => {
     await expect(run([flag])).resolves.toEqual({
       exitCode: 0,
-      stdout: ["Usage: action-inspector [--json] <owner/repository[/path]@ref>"],
+      stdout: [[
+        "Usage: action-inspector [--json] <owner/repository[/path]@ref>",
+        "       action-inspector <action@ref> [--details] [--json]",
+        "       action-inspector scan [directory] [--json] [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]",
+        "       action-inspector pin [directory] [--dry-run | --write] [--json]",
+        "       action-inspector upgrade [directory] [--policy patch|major|latest] [--dry-run | --write] [--json]",
+        "       action-inspector compare <action@before> <action@after> [--json]",
+        "",
+        "Preview is the default. Only --write modifies workflows. --no-cache bypasses the five-minute API cache.",
+      ].join("\n")],
       stderr: [],
     });
   });

@@ -137,7 +137,7 @@ export async function resolveActionReference(
       const commit = await getJson(`/commits/${encodeURIComponent(ref)}`);
       return { sha: readCommitSha(commit), refType: "sha" };
     } catch (error) {
-      if (error instanceof GitHubApiError && error.status === 404) {
+      if (error instanceof GitHubApiError && (error.status === 404 || error.status === 422)) {
         throw new Error(`Commit ${ref} was not found in repository ${repositoryName}.`);
       }
       throw error;
@@ -183,6 +183,9 @@ export async function resolveActionReference(
         ) {
           throw error;
         }
+        throw new Error(
+          `Short SHA ${ref} could not be resolved uniquely in ${repositoryName} (unknown, ambiguous, or inaccessible). Provide more characters or the full 40-character SHA.`,
+        );
       }
     }
   }

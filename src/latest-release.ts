@@ -11,6 +11,8 @@ export interface LatestRelease {
   releaseNotesUrl: string;
 }
 
+export class NoReleaseError extends Error {}
+
 export type GetLatestReleaseOptions = GitHubApiOptions;
 
 const RELEASES_PAGE_SIZE = 100;
@@ -42,12 +44,12 @@ function findHighestVersionRelease(value: unknown): LatestRelease | null {
   }
   let best: LatestRelease | null = null;
   for (const item of value) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      ("draft" in item && item.draft === true) ||
-      ("prerelease" in item && item.prerelease === true)
-    ) {
+    if (typeof item !== "object" || item === null ||
+        ("draft" in item && typeof item.draft !== "boolean") ||
+        ("prerelease" in item && typeof item.prerelease !== "boolean")) {
+      throw new Error("GitHub API returned invalid release metadata.");
+    }
+    if (("draft" in item && item.draft) || ("prerelease" in item && item.prerelease)) {
       continue;
     }
     const release = readRelease(item);
@@ -76,7 +78,7 @@ export async function getLatestRelease(
     );
   } catch (error) {
     if (error instanceof GitHubApiError && error.status === 404) {
-      throw new Error(
+      throw new NoReleaseError(
         `No latest published release was found for ${repository.owner}/${repository.repository}.`,
       );
     }
@@ -88,10 +90,20 @@ export async function getLatestRelease(
     return latest;
   }
 
-  const releases = await getRepositoryJson(
-    repository.owner,
-    repository.repository,
-    `/releases?per_page=${RELEASES_PAGE_SIZE}`,
-  );
-  return findHighestVersionRelease(releases) ?? latest;
+  let best: LatestRelease | null = null;
+  for (let page = 1; page <= 20; page++) {
+    const releases = await getRepositoryJson(
+      repository.owner, repository.repository,
+      `/releases?per_page=${RELEASES_PAGE_SIZE}${page === 1 ? "" : `&page=${page}`}`,
+    );
+    const candidate = findHighestVersionRelease(releases);
+    if (candidate && (!best || compareVersions(candidate.tagName, best.tagName) > 0)) best = candidate;
+    if (Array.isArray(releases) && releases.length < RELEASES_PAGE_SIZE) {
+      if (best) return best;
+      throw new NoReleaseError(
+        `No numeric Action release was found for ${repository.owner}/${repository.repository}; unrelated release "${latest.tagName}" was not selected.`,
+      );
+    }
+  }
+  throw new Error("Release search exceeded 2,000 releases; latest Action version is unknown.");
 }

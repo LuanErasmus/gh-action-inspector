@@ -3,11 +3,15 @@ import { runCli } from "./cli.js";
 import { getGitHubToken } from "./authentication.js";
 
 async function main(): Promise<number> {
+  const args = process.argv.slice(2);
+  if (args.includes("--no-cache") || args.includes("--write")) {
+    process.env.ACTION_INSPECTOR_NO_CACHE = "1";
+  }
   const token = getGitHubToken();
   if (token) {
     process.env.GH_TOKEN = token;
   }
-  return runCli(process.argv.slice(2), {
+  return runCli(args.filter((arg) => arg !== "--no-cache"), {
     stdout: console.log,
     stderr: console.error,
     color: Boolean(process.stdout.isTTY && process.stdout.hasColors?.()),
