@@ -240,7 +240,7 @@ export async function scanRepository(
       if (!releaseLists.has(repository)) {
         releaseLists.set(repository, (dependencies.listReleases ?? listVersionReleases)(action));
       }
-      const target = selectUpgrade(await releaseLists.get(repository)!, version, options.policy ?? "major");
+      const target = selectUpgrade(await releaseLists.get(repository)!, version, options.policy ?? "minor");
       if (!target) return { status, sha: resolved.sha, version, latest: version, newerAvailable: false, publisher: action.owner };
       const targetResolved = await dependencies.resolve({ ...action, ref: target.tagName });
       let compatibility: ActionDetailsComparison | undefined;

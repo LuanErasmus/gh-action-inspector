@@ -340,7 +340,9 @@ describe("action-inspector CLI", () => {
     expect(text).toContain(`action-inspector ${command}`);
     expect(text).toContain("--no-cache");
     if (command === "upgrade") {
-      expect(text).toContain("major                 Stay within the current major");
+      expect(text).toContain("default: minor");
+      expect(text).toContain("minor                 Stay within the current major");
+      expect(text).toContain("major                 Upgrade to the next major only");
       expect(text).toContain("latest                Allow upgrades to newer major versions");
     }
   });

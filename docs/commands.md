@@ -163,19 +163,21 @@ See [pinning and write safeguards](pinning-and-upgrades.md).
 ## Upgrade references
 
 ```text
-gh action-inspector upgrade [directory] [--policy patch|major|latest]
+gh action-inspector upgrade [directory] [--policy patch|minor|major|latest]
   [--dry-run | --write] [--json] [--no-cache]
 ```
 
 ```bash
 gh action-inspector upgrade --policy patch
+gh action-inspector upgrade --policy minor
 gh action-inspector upgrade --policy major
 gh action-inspector upgrade --policy latest
 gh action-inspector upgrade --policy major --write
 ```
 
-The default policy is `major`, meaning **within the current major**, not an
-upgrade to a new major. See [upgrade selection](pinning-and-upgrades.md#upgrade-selection)
+The default policy is `minor`, meaning **within the current major**.
+`major` selects the highest release in the next major only (v5 to v6);
+`latest` can skip majors (v5 to v7). See [upgrade selection](pinning-and-upgrades.md#upgrade-selection)
 for policy boundaries and compatibility warnings.
 
 ## Compare two Action versions

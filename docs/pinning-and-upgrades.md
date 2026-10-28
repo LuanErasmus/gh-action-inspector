@@ -38,6 +38,7 @@ See [discovery scope](commands.md#discovery-scope) for files that are scanned.
 
 ```bash
 gh action-inspector upgrade --policy patch
+gh action-inspector upgrade --policy minor
 gh action-inspector upgrade --policy major
 gh action-inspector upgrade --policy latest
 gh action-inspector upgrade --policy major --write
@@ -49,8 +50,18 @@ Upgrades also preview by default. Policies select the highest stable published
 | Policy | Allowed upgrade | Example from v1.2.3 |
 |---|---|---|
 | `patch` | Same major and minor | v1.2.10 |
-| `major` (default) | Within the current major | v1.9.0 |
-| `latest` | Any major | v2.0.0 |
+| `minor` (default) | Within the current major | v1.9.0 |
+| `major` | Next major only | v2.9.0 |
+| `latest` | Any major, including skipping majors | v3.0.0 |
+
+`major` does not fall back to a minor update or skip a missing major: if no
+stable release exists in the next major, no upgrade is proposed.
+
+> [!IMPORTANT]
+> Previously, `major` meant staying within the current major. Use `minor` to
+> retain that behavior in existing scripts. Explicit `--policy major` now allows
+> a breaking upgrade to the next major. Commands without `--policy` retain
+> their previous within-current-major behavior.
 
 Upgrades write full SHA pins and never downgrade. The current commit must have
 a numeric version tag; otherwise selection fails explicitly.
