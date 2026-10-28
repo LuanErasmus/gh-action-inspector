@@ -14,11 +14,26 @@ documentation, bug reports, and ideas are welcome.
 
 1. Fork the repository and create a branch for your change.
 2. Make your changes, adding or updating tests when applicable.
-3. Run the relevant checks. The project is under active development and does
-   not yet define a standard test or build command; document any checks you
-   performed in your pull request.
+3. Run `npm test`, `npm run typecheck`, and `npm run build`, and document the
+   results in your pull request.
 4. Open a pull request describing the problem, your changes, and any relevant
    verification results. Link related issues when applicable.
+
+## Releases
+
+Releases follow [Semantic Versioning](https://semver.org/) and are published
+by the [Release workflow](.github/workflows/release.yml) when a version tag is
+pushed. Maintainers release from an up-to-date `main` branch:
+
+```sh
+npm version patch   # or: minor, major
+git push --follow-tags
+```
+
+`npm version` updates `package.json` and `package-lock.json`, commits the
+change, and creates a matching `vX.Y.Z` tag. The workflow verifies that the
+tag matches `package.json`, runs the tests, type-check, and build, and then
+creates a GitHub Release with automatically generated release notes.
 
 Please avoid including credentials, tokens, or other sensitive information in
 code, issues, or pull requests.

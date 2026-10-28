@@ -59,41 +59,32 @@ Action Inspector focuses on answering one question:
 action-inspector actions/checkout@v4
 ```
 
-The goal is to provide output similar to:
+The command resolves the supplied reference against GitHub, retrieves the
+latest published release, and prints repository details, release notes, and a latest suggested version targeting that release:
 
 ```text
-🔍 Inspecting actions/checkout@v4
-
-Action
-  Repository       actions/checkout
-  Reference        v4
-  Reference type   Tag
-  Resolved SHA     <resolved-sha>
-
-Repository
-  Archived         No
-  License          MIT
-
-Reference
-  Immutable        No
-  Pinned to SHA    No
-
-Suggested
-  actions/checkout@<resolved-sha> # v4
+Repository: actions/checkout
+Original reference: v4
+Reference type: tag
+Resolved commit SHA: <resolved-sha>
+License: MIT
+Archived: No
+Immutable: No
+Latest release: v6.0.0
+Release notes: https://github.com/actions/checkout/releases/tag/v6.0.0
+Latest suggested version: actions/checkout@<latest-release-sha> # v6.0.0
 ```
-
-> Example output is illustrative while Action Inspector is under development.
 
 ## 🗺️ Roadmap
 
 ### v0.1
 
-- [ ] Parse GitHub Action references
-- [ ] Support Actions with subpaths
-- [ ] Resolve references to commits
-- [ ] Identify tags, branches, and commit SHAs
-- [ ] Display basic repository metadata
-- [ ] Generate a SHA-pinned reference
+- [x] Parse GitHub Action references
+- [x] Support Actions with subpaths
+- [x] Resolve references to commits
+- [x] Identify tags, branches, and commit SHAs
+- [x] Display basic repository metadata
+- [x] Generate a SHA-pinned reference
 
 ### Later
 
@@ -104,6 +95,34 @@ Possible future improvements will be driven by community feedback.
 Action Inspector is currently under development.
 
 The initial release will focus on inspecting a single GitHub Action reference.
+
+## 🛠️ Development
+
+Install dependencies, build the CLI, and link it for local use:
+
+```bash
+npm install
+npm run build
+npm link
+```
+
+You can then run the parser from any directory:
+
+```bash
+action-inspector actions/checkout@v6
+```
+
+Run the test suite and TypeScript type check with:
+
+```bash
+npm test
+npm run typecheck
+```
+
+The CLI queries GitHub's REST API. Public repositories can be inspected without
+authentication; set `GITHUB_TOKEN` to authenticate and help avoid API rate
+limits. References already pinned to a full commit SHA are identified as
+immutable and do not receive a latest-release suggestion.
 
 ## 🤝 Contributing
 
