@@ -15,6 +15,16 @@ from your terminal.
 Dependabot proposes dependency updates; Action Inspector helps you understand
 and review them on demand. It queries GitHub's API and is not an offline tool.
 
+> [!IMPORTANT]
+> **Action Inspector does not retrieve or reveal GitHub Actions secret values.**
+> It inspects workflow files and Action metadata; it does not execute workflows
+> or resolve expressions such as `${{ secrets.MY_SECRET }}` to their values.
+> It uses your GitHub CLI credentials or configured token to authenticate API
+> requests, but does not print those credentials in its reports.
+> This is not a secret scanner or redaction tool: do not hardcode secrets in
+> workflow files or Action metadata, as source content can appear in reports
+> and preview diffs.
+
 ## Installation
 
 With GitHub CLI installed:
