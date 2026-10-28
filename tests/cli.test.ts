@@ -319,20 +319,37 @@ describe("action-inspector CLI", () => {
   });
 
   it.each([["--help"], ["-h"]])("prints usage for %s", async (flag) => {
-    await expect(run([flag])).resolves.toEqual({
-      exitCode: 0,
-      stdout: [[
-        "Usage: action-inspector [--json] <owner/repository[/path]@ref>",
-        "       action-inspector <action@ref> [--details] [--json]",
-        "       action-inspector scan [directory] [--json] [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]",
-        "       action-inspector pin [directory] [--dry-run | --write] [--json]",
-        "       action-inspector upgrade [directory] [--policy patch|major|latest] [--dry-run | --write] [--json]",
-        "       action-inspector compare <action@before> <action@after> [--json]",
-        "",
-        "Preview is the default. Only --write modifies workflows. --no-cache bypasses the five-minute API cache.",
-      ].join("\n")],
-      stderr: [],
-    });
+    const result = await run([flag]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toEqual([]);
+    const text = result.stdout.join("\n");
+    for (const section of ["GitHub Action Inspector", "Usage", "Commands", "Options", "Examples", "Safety", "Command help"]) {
+      expect(text).toContain(section);
+    }
+    expect(text).toContain("--details");
+    expect(text).toContain("--no-cache");
+    expect(text).toContain("Only --write modifies files.");
+  });
+
+  it.each(["scan", "pin", "upgrade", "compare"])("shows focused help for %s", async (command) => {
+    const result = await run([command, "--help"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toEqual([]);
+    const text = result.stdout.join("\n");
+    for (const section of ["Usage", "Arguments", "Options", "Examples"]) expect(text).toContain(section);
+    expect(text).toContain(`action-inspector ${command}`);
+    expect(text).toContain("--no-cache");
+    if (command === "upgrade") {
+      expect(text).toContain("major                 Stay within the current major");
+      expect(text).toContain("latest                Allow upgrades to newer major versions");
+    }
+  });
+
+  it("wraps help to narrow terminals and keeps colored text equivalent", async () => {
+    const plain = await run(["--help"], {}, { width: 40 });
+    const colored = await run(["--help"], {}, { width: 40, color: true });
+    expect(plain.stdout[0].split("\n").every((line) => line.length <= 40)).toBe(true);
+    expect(colored.stdout[0].replace(/\x1b\[[0-9;]*m/g, "")).toBe(plain.stdout[0]);
   });
 
   it.each([

@@ -14,8 +14,10 @@ gh action-inspector upgrade --help
 gh action-inspector compare --help
 ```
 
-Top-level help lists the commands. Subcommand help shows the accepted syntax;
-the guides provide detailed explanations and examples.
+Top-level help separates usage, commands, common options, examples, and safety
+guidance into readable sections. Subcommand help shows arguments, applicable
+options, and examples, including the upgrade policy boundaries. Help wraps to
+the terminal width; the guides provide more detailed explanations.
 
 ## Inspect a reference
 

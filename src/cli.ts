@@ -29,6 +29,97 @@ interface CliOutput {
 
 const USAGE = "Usage: action-inspector [--json] <owner/repository[/path]@ref>";
 
+function helpLines(command?: string): string[] {
+  const shared = [
+    "  --json                  Output JSON instead of a text report",
+    "  --no-cache              Bypass the five-minute API cache",
+    "  -h, --help              Show help",
+  ];
+  const writeOptions = [
+    "  --dry-run               Preview changes (the default)",
+    "  --write                 Apply changes to workflow files",
+  ];
+  if (!command) return [
+    "GitHub Action Inspector",
+    "  Inspect, scan, pin, and upgrade GitHub Actions.",
+    "",
+    "Usage",
+    "  action-inspector <action@ref> [options]",
+    "  action-inspector <command> [arguments] [options]",
+    "",
+    "Commands",
+    "  <action@ref>             Inspect an Action reference",
+    "  scan [directory]        Check workflow dependencies and updates",
+    "  pin [directory]         Preview full-SHA pins for current commits",
+    "  upgrade [directory]     Preview version upgrades and SHA pins",
+    "  compare <before> <after>",
+    "                          Compare two versions of the same Action",
+    "",
+    "Options",
+    "  --details               Include runtime, inputs, and outputs when inspecting",
+    ...shared,
+    "",
+    "Examples",
+    "  action-inspector actions/checkout@v4 --details",
+    "  action-inspector scan",
+    "  action-inspector pin --dry-run",
+    "  action-inspector upgrade --policy latest",
+    "  action-inspector compare actions/checkout@v4 actions/checkout@v7",
+    "",
+    "Safety",
+    "  Pin and upgrade preview by default. Only --write modifies files.",
+    "",
+    "Command help",
+    "  Run action-inspector <command> --help for command-specific options.",
+  ];
+  const comparison = command === "compare";
+  return [
+    `action-inspector ${command}`,
+    "",
+    "Usage",
+    `  action-inspector ${command} ${comparison ? "<action@before> <action@after>" : "[directory]"} [options]`,
+    "",
+    "Arguments",
+    ...(comparison ? [
+      "  <action@before>         Original Action reference",
+      "  <action@after>          New reference for the same Action and subdirectory",
+    ] : ["  [directory]             Repository root (default: current directory)"]),
+    "",
+    "Options",
+    ...(command === "scan" ? [
+      "  --fail-on <checks>      Fail on comma-separated policy checks:",
+      "                          unpinned, archived, publisher",
+      "  --allow-publishers <owners>",
+      "                          Comma-separated owners allowed by publisher policy",
+    ] : []),
+    ...(command === "pin" || command === "upgrade" ? writeOptions : []),
+    ...(command === "upgrade" ? [
+      "  --policy <policy>       Upgrade boundary (default: major)",
+      "    patch                 Stay within the current major and minor",
+      "    major                 Stay within the current major",
+      "    latest                Allow upgrades to newer major versions",
+    ] : []),
+    ...shared,
+    "",
+    "Examples",
+    ...(comparison ? ["  action-inspector compare actions/checkout@v4 actions/checkout@v7"]
+      : command === "scan" ? [
+        "  action-inspector scan",
+        "  action-inspector scan --fail-on unpinned,archived",
+        "  action-inspector scan --fail-on publisher --allow-publishers actions,github",
+      ] : [
+        `  action-inspector ${command} --dry-run`,
+        `  action-inspector ${command}${command === "upgrade" ? " --policy latest" : ""} --write`,
+      ]),
+    ...(command === "pin" || command === "upgrade" ? [
+      "", "Safety",
+      command === "pin" ? "  Pinning preserves current commits; it does not upgrade versions."
+        : "  Review compatibility findings before applying upgrades.",
+      "  Preview is the default. Only --write modifies files.",
+    ] : []),
+  ];
+}
+
 export interface CliDependencies {
   resolve: typeof resolveActionReference;
   getMetadata: typeof getRepositoryMetadata;
@@ -60,7 +151,7 @@ export async function runCli(
   };
   if (args[0] === "compare") {
     if (args.includes("--help") || args.includes("-h")) {
-      output.stdout("Usage: action-inspector compare <action@before> <action@after> [--json]");
+      output.stdout(renderLines(helpLines("compare"), output).join("\n"));
       return 0;
     }
     const references = args.slice(1).filter((arg) => arg !== "--json");
@@ -98,7 +189,7 @@ export async function runCli(
     const mode = args[0];
     const usage = `Usage: action-inspector ${mode} [directory] [--json]${mode !== "scan" ? " [--dry-run | --write]" : " [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]"}${mode === "upgrade" ? " [--policy patch|major|latest]" : ""}`;
     if (args.includes("--help") || args.includes("-h")) {
-      output.stdout(usage);
+      output.stdout(renderLines(helpLines(mode), output).join("\n"));
       return 0;
     }
     try {
@@ -122,16 +213,7 @@ export async function runCli(
   const json = args.includes("--json");
   const positional = args.filter((arg) => arg !== "--json" && arg !== "--details");
   if (positional.length === 1 && (positional[0] === "-h" || positional[0] === "--help")) {
-    output.stdout([
-      USAGE,
-      "       action-inspector <action@ref> [--details] [--json]",
-      "       action-inspector scan [directory] [--json] [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]",
-      "       action-inspector pin [directory] [--dry-run | --write] [--json]",
-      "       action-inspector upgrade [directory] [--policy patch|major|latest] [--dry-run | --write] [--json]",
-      "       action-inspector compare <action@before> <action@after> [--json]",
-      "",
-      "Preview is the default. Only --write modifies workflows. --no-cache bypasses the five-minute API cache.",
-    ].join("\n"));
+    output.stdout(renderLines(helpLines(), output).join("\n"));
     return 0;
   }
   if (positional.length !== 1 || positional[0].startsWith("-")) {
