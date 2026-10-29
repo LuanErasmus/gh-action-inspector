@@ -79,6 +79,7 @@ describe("release automation", () => {
       encoding: "utf8",
       env: { ...process.env, RUNNER_TEMP: directory, TAG: "v2.0.0" },
     });
+
     expect(result.status, result.stderr).toBe(0);
     const body = readFileSync(join(directory, "release-pr.md"), "utf8");
     const template = readFileSync(".github/PULL_REQUEST_TEMPLATE.md", "utf8");
@@ -88,6 +89,13 @@ describe("release automation", () => {
     }
     expect(body).toContain("Bump package.json and package-lock.json to v2.0.0");
     expect(body).toContain("not run by preparation");
+  });
+
+  it("attributes release commits to the verified release App bot", () => {
+    const creation = prepare.jobs.prepare.steps.at(-1).run as string;
+    expect(creation).toContain('git config user.name "luan-release-bot[bot]"');
+    expect(creation).toContain('git config user.email "349538955+luan-release-bot[bot]@users.noreply.github.com"');
+    expect(creation).not.toContain("release-automation@users.noreply.github.com");
   });
 
   it("builds before publishing a draft and verifies main ancestry", () => {
