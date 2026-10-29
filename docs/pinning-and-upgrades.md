@@ -66,6 +66,34 @@ stable release exists in the next major, no upgrade is proposed.
 Upgrades write full SHA pins and never downgrade. The current commit must have
 a numeric version tag; otherwise selection fails explicitly.
 
+### Minimum release age
+
+`latest` defaults to a **7-day waiting period**, measured from GitHub's release
+`published_at` timestamp in elapsed 24-hour days. It selects the highest stable
+release old enough, not necessarily the newest published release:
+
+```bash
+gh action-inspector upgrade --policy latest
+gh action-inspector upgrade --policy latest --min-release-age 14
+gh action-inspector upgrade --policy latest --min-release-age 0
+gh action-inspector upgrade --policy major --min-release-age 7
+```
+
+Other policies have no waiting period unless `--min-release-age` is supplied.
+The option accepts non-negative whole days; `0` disables the filter. Drafts
+and prereleases remain excluded even with `0`. A release exactly at the age
+boundary qualifies; future publication dates do not qualify with a positive
+waiting period.
+
+Reports show the effective waiting period and explain when a newer release was
+excluded. If none qualify, the current reference is retained. Missing or invalid
+publication dates produce an explicit error when age must be checked, rather
+than allowing an unverified upgrade. JSON upgrade reports include `minReleaseAge`
+and row warnings. Scan, pin, inspection, and comparison behavior is unchanged.
+
+**Age is not a guarantee of stability or security.** Review compatibility
+findings and release notes before adopting an upgrade.
+
 Release listing is paginated, excludes drafts, prereleases, and unrelated tag
 names, and fails if the 2,000-release search limit is reached instead of making
 an incomplete recommendation. Existing version-only comments are refreshed;

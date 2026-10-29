@@ -238,6 +238,7 @@ export interface ScanReport {
   mode: "scan" | "pin" | "upgrade";
   files: number;
   filesWithoutUses?: string[];
+  minReleaseAge?: number;
   rows: ScanRow[];
   changes: PinChange[];
   errors: string[];
@@ -248,6 +249,7 @@ export interface ScanReport {
 export interface ScanOptions {
   write?: boolean;
   policy?: UpgradePolicy;
+  minReleaseAge?: number;
   failOn?: ("unpinned" | "archived" | "publisher")[];
   allowedPublishers?: string[];
 }
@@ -259,9 +261,13 @@ export async function scanRepository(
   options: ScanOptions = {},
 ): Promise<ScanReport> {
   const discovery = await discoverWorkflows(directory);
+  const policy = options.policy ?? "minor";
+  const minReleaseAge = options.minReleaseAge ?? (policy === "latest" ? 7 : 0);
+  const selectionTime = Date.now();
   const report: ScanReport = {
     mode, files: discovery.files.size, rows: [], changes: [], errors: [...discovery.errors],
     filesWithoutUses: discovery.filesWithoutUses,
+    ...(mode === "upgrade" ? { minReleaseAge } : {}),
   };
   const references = new Map<string, Promise<Omit<ScanRow, "file" | "line" | "reference">>>();
   const repositories = new Map<string, Promise<{
@@ -288,8 +294,13 @@ export async function scanRepository(
       if (!releaseLists.has(repository)) {
         releaseLists.set(repository, (dependencies.listReleases ?? listVersionReleases)(action));
       }
-      const target = selectUpgrade(await releaseLists.get(repository)!, version, options.policy ?? "minor");
-      if (!target) return { status, sha: resolved.sha, version, latest: version, newerAvailable: false, publisher: action.owner };
+      const releases = await releaseLists.get(repository)!;
+      const target = selectUpgrade(releases, version, policy, minReleaseAge, selectionTime);
+      const unrestricted = selectUpgrade(releases, version, policy);
+      const warning = unrestricted && unrestricted.tagName !== target?.tagName
+        ? `Release ${unrestricted.tagName} does not meet the minimum release age of ${minReleaseAge} days. ${target ? `Selected ${target.tagName} instead.` : "No eligible upgrade; current version retained."}`
+        : undefined;
+      if (!target) return { status, sha: resolved.sha, version, latest: version, newerAvailable: false, publisher: action.owner, warning };
       const targetResolved = await dependencies.resolve({ ...action, ref: target.tagName });
       let compatibility: ActionDetailsComparison | undefined;
       if (/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(action.path ?? "")) {
@@ -306,6 +317,7 @@ export async function scanRepository(
         newerAvailable: true, publisher: action.owner,
         majorUpgrade: compareVersions(target.tagName.replace(/^v/, "").split(".")[0], version.replace(/^v/, "").split(".")[0]) > 0,
         compatibility, releaseNotesUrl: target.releaseNotesUrl,
+        warning,
       };
     }
     if (!repositories.has(repository)) {
@@ -523,6 +535,7 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   return renderLines([
     title,
     totals,
+    ...(report.mode === "upgrade" ? [`Minimum release age: ${report.minReleaseAge ?? 0} days (publication age, not a stability guarantee).`] : []),
     ...(references.length ? references : ["", "No Action references found."]),
     ...report.rows.filter((row) => row.majorUpgrade).map((row) => `WARNING ${row.file}:${row.line}: major upgrade to ${row.target}; review release notes and compatibility.`),
     ...report.rows.filter((row) => row.target).flatMap((row) => {

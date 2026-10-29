@@ -9,6 +9,7 @@ import { compareVersions, isVersionTag } from "./version.js";
 export interface LatestRelease {
   tagName: string;
   releaseNotesUrl: string;
+  publishedAt?: string;
 }
 
 export class NoReleaseError extends Error {}

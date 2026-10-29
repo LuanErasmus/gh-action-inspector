@@ -20,6 +20,14 @@ export function parseRepositoryOptions(args: string[], mode: "scan" | "pin" | "u
       options.policy = value;
       continue;
     }
+    if (arg === "--min-release-age" && mode === "upgrade") {
+      const value = args[++i];
+      if (!value || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+        throw new Error("--min-release-age requires a non-negative whole number of days.");
+      }
+      options.minReleaseAge = Number(value);
+      continue;
+    }
     if (arg === "--fail-on" && mode === "scan") {
       const values = args[++i]?.split(",") ?? [];
       if (!values.length || values.some((value) => !["unpinned", "archived", "publisher"].includes(value))) {

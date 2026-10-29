@@ -49,6 +49,7 @@ describe("upgrade selection", () => {
   it("paginates releases and excludes drafts, prereleases, and unrelated products", async () => {
     const body = (tag: string, extra: object = {}) => ({
       tag_name: tag, html_url: release(tag).releaseNotesUrl,
+      published_at: "2020-01-01T00:00:00Z",
       draft: false, prerelease: false, ...extra,
     });
     const urls: string[] = [];
@@ -68,5 +69,32 @@ describe("upgrade selection", () => {
     await expect(listVersionReleases({ owner: "owner", repository: "action" }, {
       fetch: async () => new Response("{}"),
     })).rejects.toThrow("invalid release list");
+  });
+
+  it("uses the highest old-enough release with an inclusive seven-day boundary", () => {
+    const now = Date.parse("2026-10-29T12:00:00Z");
+    const candidates = [
+      { ...release("v3.0.0"), publishedAt: "2026-10-28T12:00:00Z" },
+      { ...release("v2.0.0"), publishedAt: "2026-10-22T12:00:00Z" },
+    ];
+    expect(selectUpgrade(candidates, "v1.0.0", "latest", 7, now)?.tagName).toBe("v2.0.0");
+    expect(selectUpgrade(candidates, "v1.0.0", "latest", 7, now - 1)).toBeUndefined();
+    expect(selectUpgrade(candidates, "v1.0.0", "latest", 0, now)?.tagName).toBe("v3.0.0");
+    expect(selectUpgrade(candidates, "v1.0.0", "latest", 14, now)).toBeUndefined();
+    expect(selectUpgrade([{ ...release("v9.0.0"), publishedAt: "2099-01-01T00:00:00Z" }],
+      "v1", "latest", 7, now)).toBeUndefined();
+  });
+
+  it.each([undefined, "invalid"])("fails explicitly for unverified release dates (%s)", (publishedAt) => {
+    expect(() => selectUpgrade([{ ...release("v2.0.0"), publishedAt }], "v1", "latest", 7))
+      .toThrow("publication date");
+  });
+
+  it.each(["-1", "1.5", "NaN", "Infinity", "", "9007199254740992"])("rejects invalid age %s", (value) => {
+    expect(() => parseRepositoryOptions(["--min-release-age", value], "upgrade")).toThrow("--min-release-age");
+  });
+
+  it.each(["0", "7", "14"])("parses age %s", (value) => {
+    expect(parseRepositoryOptions(["--min-release-age", value], "upgrade").options.minReleaseAge).toBe(Number(value));
   });
 });

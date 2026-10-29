@@ -371,6 +371,31 @@ describe("pin preview", () => {
 });
 
 describe("upgrades and CI policies", () => {
+  it("applies the latest waiting period, exposes skipped releases, and supports opt-out", async () => {
+    const root = await fixture({ ".github/workflows/ci.yml": workflow("      - uses: owner/action@v1") });
+    const deps = dependencies();
+    deps.listReleases = async () => [{
+      tagName: "v2.0.0", releaseNotesUrl: "https://github.com/owner/action/releases/tag/v2.0.0",
+      publishedAt: new Date().toISOString(),
+    }];
+    const waiting = await scanRepository(root, "upgrade", deps, { policy: "latest" });
+    expect(waiting.minReleaseAge).toBe(7);
+    expect(waiting.changes).toEqual([]);
+    expect(waiting.rows[0].warning).toContain("No eligible upgrade");
+    expect(formatScan(waiting).join("\n")).toContain("Minimum release age: 7 days");
+    const immediate = await scanRepository(root, "upgrade", deps, { policy: "latest", minReleaseAge: 0 });
+    expect(immediate.rows[0].target).toBe("v2.0.0");
+    const major = await scanRepository(root, "upgrade", deps, { policy: "major" });
+    expect(major.rows[0].target).toBe("v2.0.0");
+    const delayed = await scanRepository(root, "upgrade", deps, { policy: "major", minReleaseAge: 14 });
+    expect(delayed.changes).toEqual([]);
+    deps.listReleases = async () => [{
+      tagName: "v2.0.0", releaseNotesUrl: "https://github.com/owner/action/releases/tag/v2.0.0",
+    }];
+    const invalid = await scanRepository(root, "upgrade", deps, { policy: "latest", write: true });
+    expect(invalid.rows[0].error).toContain("publication date");
+    expect(invalid.written).toBeUndefined();
+  });
   it("previews a major upgrade, then writes the exact selected SHA and refreshes the version-only comment", async () => {
     const source = workflow(`      - uses: owner/action@${sha} # v1.0.0`);
     const root = await fixture({ ".github/workflows/ci.yml": source });
