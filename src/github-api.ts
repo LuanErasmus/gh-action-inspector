@@ -53,6 +53,16 @@ export function createGitHubApiClient(options: GitHubApiOptions = {}) {
       });
 
       if (!response.ok) {
+        const sso = response.headers.get("x-github-sso");
+        if (response.status === 403 && /^required(?:;|$)/i.test(sso?.trim() ?? "")) {
+          throw new GitHubApiError(
+            "GitHub API request failed with HTTP 403: organization SSO authorization is required for the selected credentials. " +
+            "Sign in to your organization's SSO, then authorize the GitHub CLI OAuth app or your classic personal access token for that organization in GitHub Settings. " +
+            "Check `gh auth status --hostname github.com`. GH_TOKEN and GITHUB_TOKEN override the stored CLI login; authorize or replace the selected token, not a different account. " +
+            "See https://docs.github.com/en/authentication/authenticating-with-single-sign-on",
+            response.status,
+          );
+        }
         const remaining = response.headers.get("x-ratelimit-remaining");
         const reset = response.headers.get("x-ratelimit-reset");
         const retry = response.headers.get("retry-after");
