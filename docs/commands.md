@@ -133,12 +133,22 @@ Workflow scan: 1 file, 2 references
 
 The scanner reads `.yml` and `.yaml` files in `.github/workflows` and follows
 reachable local reusable workflows and composite actions, including composites
-outside `.github`. Remote reusable workflow references are inspected as
+outside `.github`. It also recursively discovers `action.yml` and `action.yaml`
+under `.github/actions`, even when no workflow references them. `action.yml`
+takes precedence when both names exist in a directory. Composite `runs.steps`
+dependencies are inspected; JavaScript and Docker Action metadata do not add
+nested `uses` dependencies. Files already reached from workflows are not scanned
+twice. This discovery applies to scan, pin, and upgrade, including writes.
+Successfully inspected files without dependency references appear with
+`No uses found in file.` rather than being omitted. Malformed files are reported
+as errors, not as empty files.
+Remote reusable workflow references are inspected as
 dependencies, but their contents are not recursively scanned.
 
 Local paths are relative to the selected repository root; references outside
 that root are refused. Cycles do not cause repeated traversal. A missing workflow
-directory produces an empty scan.
+directory does not prevent local Action discovery. With neither workflows nor
+local Action metadata, the scan is empty.
 
 Docker references and expressions are listed but not resolved. Missing local
 dependencies, unsupported YAML aliases/merge keys in jobs or steps, malformed
@@ -239,6 +249,7 @@ Inspection returns the reference, repository information, and latest release;
 `comparison`, and `releaseNotes`.
 
 Repository commands return `mode`, `files` (the discovered file count), `rows`,
+`filesWithoutUses` (successfully inspected paths with no dependency references),
 `changes`, and `errors`. Per-reference errors appear in `rows[].error`;
 discovery errors appear in `errors`. Policy violations appear in
 `policyFailures`, and applied file paths appear in `written`.

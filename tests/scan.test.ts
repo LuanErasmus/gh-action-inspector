@@ -111,6 +111,39 @@ describe("workflow discovery", () => {
     expect(result.errors[0]).toContain("ci.yml");
   });
 
+    it("discovers unreferenced nested composites even without workflows", async () => {
+      const root = await fixture({
+        ".github/actions/group/build/action.yaml": "runs:\n  using: composite\n  steps:\n    - uses: owner/action@v1\n",
+        ".github/actions/js/action.yml": "runs:\n  using: node24\n  main: index.js\n",
+        ".github/actions/notes.yml": "uses: ignored/example@v1\n",
+      });
+      const result = await discoverWorkflows(root);
+      expect(result.errors).toEqual([]);
+      expect(result.usages.map((usage) => usage.reference)).toEqual(["owner/action@v1"]);
+      expect(result.usages[0].file).toBe(join(".github", "actions", "group", "build", "action.yaml"));
+    });
+
+    it("does not duplicate referenced composites and prefers action.yml over action.yaml", async () => {
+      const root = await fixture({
+        ".github/workflows/ci.yml": workflow("      - uses: ./.github/actions/build"),
+        ".github/actions/build/action.yml": "runs:\n  using: composite\n  steps:\n    - uses: owner/action@v1\n",
+        ".github/actions/build/action.yaml": "runs:\n  using: composite\n  steps:\n    - uses: ignored/action@v1\n",
+      });
+      const result = await discoverWorkflows(root);
+      expect(result.errors).toEqual([]);
+      expect(result.usages.filter((usage) => usage.kind === "github").map((usage) => usage.reference))
+        .toEqual(["owner/action@v1"]);
+    });
+
+    it("reports malformed unreferenced metadata without skipping other composites", async () => {
+      const root = await fixture({
+        ".github/actions/bad/action.yml": "runs: [",
+        ".github/actions/good/action.yml": "runs:\n  using: composite\n  steps:\n    - uses: owner/action@v1\n",
+      });
+      const result = await discoverWorkflows(root);
+      expect(result.errors).toHaveLength(1);
+      expect(result.usages[0].reference).toBe("owner/action@v1");
+    });
   it("refuses references outside the repository", async () => {
     const external = await fixture({ "action.yml": "runs:\n  using: composite\n  steps:\n    - uses: external/action@v1\n" });
     const root = await fixture({
@@ -141,6 +174,36 @@ describe("workflow discovery", () => {
 });
 
 describe("repository scan", () => {
+  it("shows scanned files without uses and does not label malformed files as empty", async () => {
+    const root = await fixture({
+      ".github/workflows/ci.yml": workflow("      - uses: ./.github/actions/local"),
+      ".github/actions/local/action.yml": "runs:\n  using: composite\n  steps:\n    - run: echo hello\n      shell: bash\n",
+      ".github/actions/bad/action.yml": "runs: [",
+      ".github/workflows/scripts.yml": workflow("      - run: echo hello"),
+    });
+    const report = await scanRepository(root, "scan", dependencies());
+    expect(report.filesWithoutUses).toEqual(expect.arrayContaining([
+      join(".github", "actions", "local", "action.yml"),
+      join(".github", "workflows", "scripts.yml"),
+    ]));
+    expect(report.filesWithoutUses).not.toContain(join(".github", "actions", "bad", "action.yml"));
+    const output = formatScan(report).join("\n");
+    expect(output).toContain(`${join(".github", "actions", "local", "action.yml")}\n  No uses found in file.`);
+    expect(report.errors).toHaveLength(1);
+  });
+  it("scans and pins dependencies of an unreferenced local composite", async () => {
+    const file = ".github/actions/build/action.yml";
+    const source = "runs:\n  using: composite\n  steps:\n    - uses: owner/action@v1\n";
+    const root = await fixture({ [file]: source });
+    const deps = dependencies();
+    const scan = await scanRepository(root, "scan", deps);
+    expect(scan.rows[0]).toMatchObject({ reference: "owner/action@v1", status: "Unpinned" });
+    const preview = await scanRepository(root, "pin", deps);
+    expect(preview.changes[0].after).toContain(`owner/action@${sha}`);
+    expect(await readFile(join(root, file), "utf8")).toBe(source);
+    await scanRepository(root, "pin", deps, { write: true });
+    expect(await readFile(join(root, file), "utf8")).toContain(`owner/action@${sha}`);
+  });
   it("reports locations, current version, pin status, latest version, and updates", async () => {
     const root = await fixture({
       ".github/workflows/ci.yml": workflow(`      - uses: owner/action@v1

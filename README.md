@@ -52,7 +52,7 @@ gh extension remove action-inspector
 # Inspect a reference, including its resolved full SHA and latest release
 gh action-inspector actions/checkout@v4
 
-# Scan the current repository's workflows and reachable local dependencies
+# Scan workflows, local Actions under .github/actions, and reachable dependencies
 gh action-inspector scan
 
 # Preview pinning existing versions without upgrading

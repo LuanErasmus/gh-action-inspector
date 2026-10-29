@@ -1,4 +1,5 @@
-import { readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument } from "yaml";
 import type { CliDependencies } from "./cli.js";
@@ -23,6 +24,7 @@ export interface Discovery {
   files: Map<string, string>;
   usages: Usage[];
   errors: string[];
+  filesWithoutUses: string[];
 }
 
 function message(error: unknown): string {
@@ -35,7 +37,7 @@ function isMissing(error: unknown): boolean {
 
 export async function discoverWorkflows(directory: string): Promise<Discovery> {
   const root = await realpath(resolve(directory));
-  const result: Discovery = { root, files: new Map(), usages: [], errors: [] };
+  const result: Discovery = { root, files: new Map(), usages: [], errors: [], filesWithoutUses: [] };
   const visited = new Set<string>();
 
   async function visit(path: string, workflow: boolean): Promise<void> {
@@ -119,6 +121,10 @@ export async function discoverWorkflows(directory: string): Promise<Discovery> {
       }
     }
 
+    if (!result.usages.some((usage) => usage.file === name)) {
+      result.filesWithoutUses.push(name);
+    }
+
     for (const usage of local) {
       try {
         const target = resolve(root, ...usage.reference.split("/"));
@@ -141,14 +147,11 @@ export async function discoverWorkflows(directory: string): Promise<Discovery> {
   }
 
   const workflows = join(root, ".github", "workflows");
-  let entries;
+  let entries: Dirent[] = [];
   try {
     entries = await readdir(workflows, { withFileTypes: true });
   } catch (error) {
-    if (isMissing(error)) {
-      return result;
-    }
-    throw error;
+    if (!isMissing(error)) throw error;
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if ((entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)) {
@@ -158,6 +161,49 @@ export async function discoverWorkflows(directory: string): Promise<Discovery> {
         result.errors.push(message(error));
       }
     }
+  }
+  const actionDirectories = new Set<string>();
+  async function discoverActions(path: string): Promise<void> {
+    const canonical = await realpath(path);
+    const name = relative(root, canonical);
+    if (name === ".." || name.startsWith(`..${sep}`) || isAbsolute(name)) {
+      throw new Error(`Local Action directory escapes the repository: ${path}`);
+    }
+    if (actionDirectories.has(canonical)) return;
+    actionDirectories.add(canonical);
+    const children = await readdir(canonical, { withFileTypes: true });
+    const metadata = ["action.yml", "action.yaml"].find((file) =>
+      children.some((entry) => entry.name === file && (entry.isFile() || entry.isSymbolicLink())));
+    if (metadata) {
+      try {
+        await visit(join(canonical, metadata), false);
+      } catch (error) {
+        result.errors.push(message(error));
+      }
+    }
+    for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+      try {
+        if (child.isDirectory()) await discoverActions(join(canonical, child.name));
+        else if (child.isSymbolicLink() && child.name !== metadata &&
+            !["action.yml", "action.yaml"].includes(child.name)) {
+          // Resolve links before traversal so external content is never scanned.
+          const target = await realpath(join(canonical, child.name));
+          const targetName = relative(root, target);
+          if (targetName === ".." || targetName.startsWith(`..${sep}`) || isAbsolute(targetName)) {
+            throw new Error(`Local Action path escapes the repository: ${join(canonical, child.name)}`);
+          }
+          if ((await stat(target)).isDirectory()) await discoverActions(target);
+        }
+      } catch (error) {
+        result.errors.push(message(error));
+      }
+    }
+  }
+  const actions = join(root, ".github", "actions");
+  try {
+    await discoverActions(actions);
+  } catch (error) {
+    if (!isMissing(error)) result.errors.push(message(error));
   }
   return result;
 }
@@ -191,6 +237,7 @@ export interface PinChange {
 export interface ScanReport {
   mode: "scan" | "pin" | "upgrade";
   files: number;
+  filesWithoutUses?: string[];
   rows: ScanRow[];
   changes: PinChange[];
   errors: string[];
@@ -214,6 +261,7 @@ export async function scanRepository(
   const discovery = await discoverWorkflows(directory);
   const report: ScanReport = {
     mode, files: discovery.files.size, rows: [], changes: [], errors: [...discovery.errors],
+    filesWithoutUses: discovery.filesWithoutUses,
   };
   const references = new Map<string, Promise<Omit<ScanRow, "file" | "line" | "reference">>>();
   const repositories = new Map<string, Promise<{
@@ -403,11 +451,15 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
     group.push(row);
     groups.set(row.file, group);
   }
+  for (const file of report.filesWithoutUses ?? []) {
+    if (!groups.has(file)) groups.set(file, []);
+  }
   const width = Number.isFinite(options.width) ? Math.max(1, Math.floor(options.width!)) : 100;
   const showVersions = report.mode !== "pin" && width >= 80;
   const showStatus = width >= 32;
   const versionHeader = report.mode === "upgrade" ? "Target" : "Latest";
   const references = [...groups].flatMap(([file, rows]) => {
+    if (!rows.length) return ["", file, "  No uses found in file."];
     const status = (row: ScanRow) => row.status === "local" ? "Local dependency"
       : row.status === "expression" ? "Dynamic / not resolved"
       : row.status === "docker" ? "Docker / not resolved" : row.status;
