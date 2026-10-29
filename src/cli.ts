@@ -99,6 +99,10 @@ function helpLines(command?: string): string[] {
       "    minor                 Stay within the current major",
       "    major                 Upgrade to the next major only (v5 -> v6)",
       "    latest                Allow upgrades to newer major versions",
+      "  --min-release-age <days>",
+      "                          Minimum publication age in whole days",
+      "                          Default: 7 for latest, 0 for other policies",
+      "                          Use 0 to disable; age does not guarantee stability",
     ] : []),
     ...shared,
     "",
@@ -188,7 +192,7 @@ export async function runCli(
   }
   if (args[0] === "scan" || args[0] === "pin" || args[0] === "upgrade") {
     const mode = args[0];
-    const usage = `Usage: action-inspector ${mode} [directory] [--json]${mode !== "scan" ? " [--dry-run | --write]" : " [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]"}${mode === "upgrade" ? " [--policy patch|minor|major|latest]" : ""}`;
+    const usage = `Usage: action-inspector ${mode} [directory] [--json]${mode !== "scan" ? " [--dry-run | --write]" : " [--fail-on unpinned,archived,publisher] [--allow-publishers owner,...]"}${mode === "upgrade" ? " [--policy patch|minor|major|latest] [--min-release-age days]" : ""}`;
     if (args.includes("--help") || args.includes("-h")) {
       output.stdout(renderLines(helpLines(mode), output).join("\n"));
       return 0;

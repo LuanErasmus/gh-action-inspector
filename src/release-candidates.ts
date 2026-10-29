@@ -29,7 +29,10 @@ export async function listVersionReleases(
       if (item.draft || item.prerelease || !/^v?\d+\.\d+\.\d+$/.test(item.tag_name)) continue;
       const url = new URL(item.html_url);
       if (url.protocol !== "https:") throw new Error("GitHub API returned an invalid release URL.");
-      releases.push({ tagName: item.tag_name, releaseNotesUrl: item.html_url });
+      if (typeof item.published_at !== "string" || !Number.isFinite(Date.parse(item.published_at))) {
+        throw new Error("GitHub API returned a missing or invalid release publication date.");
+      }
+      releases.push({ tagName: item.tag_name, releaseNotesUrl: item.html_url, publishedAt: item.published_at });
     }
     if (data.length < 100) {
       return releases.sort((a, b) => compareVersions(b.tagName, a.tagName));
@@ -40,7 +43,12 @@ export async function listVersionReleases(
 
 export function selectUpgrade(
   releases: LatestRelease[], current: string, policy: UpgradePolicy,
+  minReleaseAge = 0, now = Date.now(),
 ): LatestRelease | undefined {
+  if (!Number.isSafeInteger(minReleaseAge) || minReleaseAge < 0 ||
+      !Number.isFinite(minReleaseAge * 86_400_000) || !Number.isFinite(now)) {
+    throw new Error("Minimum release age must be a non-negative whole number of days.");
+  }
   if (!isVersionTag(current)) {
     throw new Error("Cannot select an upgrade without a numeric current version tag.");
   }
@@ -49,8 +57,14 @@ export function selectUpgrade(
   return releases.filter((release) => {
     if (!/^v?\d+\.\d+\.\d+$/.test(release.tagName) || compareVersions(release.tagName, current) <= 0) return false;
     const [nextMajor, nextMinor] = parts(release.tagName);
-    return policy === "latest" ||
+    const allowed = policy === "latest" ||
       (policy === "major" ? nextMajor === major + 1
         : nextMajor === major && (policy === "minor" || nextMinor === minor));
+    if (!allowed || minReleaseAge === 0) return allowed;
+    const published = release.publishedAt ? Date.parse(release.publishedAt) : NaN;
+    if (!Number.isFinite(published)) {
+      throw new Error(`Missing or invalid publication date for ${release.tagName}; cannot enforce minimum release age.`);
+    }
+    return now - published >= minReleaseAge * 86_400_000;
   }).sort((a, b) => compareVersions(b.tagName, a.tagName))[0];
 }

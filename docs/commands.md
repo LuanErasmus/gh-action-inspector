@@ -174,6 +174,7 @@ See [pinning and write safeguards](pinning-and-upgrades.md).
 
 ```text
 gh action-inspector upgrade [directory] [--policy patch|minor|major|latest]
+  [--min-release-age days]
   [--dry-run | --write] [--json] [--no-cache]
 ```
 
@@ -189,6 +190,11 @@ The default policy is `minor`, meaning **within the current major**.
 `major` selects the highest release in the next major only (v5 to v6);
 `latest` can skip majors (v5 to v7). See [upgrade selection](pinning-and-upgrades.md#upgrade-selection)
 for policy boundaries and compatibility warnings.
+
+`latest` only selects stable releases published at least **7 days** ago by
+default. Set `--min-release-age 14` for two weeks or `0` to disable the wait.
+Other policies only apply a waiting period when explicitly requested.
+See [minimum release age](pinning-and-upgrades.md#minimum-release-age).
 
 ## Compare two Action versions
 
