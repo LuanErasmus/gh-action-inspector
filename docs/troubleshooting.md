@@ -38,6 +38,28 @@ The tool does not silently substitute stale data or automatically retry write
 plans after API failures. [CI authentication](ci-policies.md#github-actions-integration)
 may need a dedicated token for cross-repository private dependencies.
 
+### Organization SSO authorization required
+
+When GitHub returns `403` with `X-GitHub-SSO: required`, the tool explicitly
+reports that organization SSO authorization is needed rather than a generic
+access-denied message. It does not open a browser, change accounts, or bypass SSO.
+
+1. Sign in to the organization's identity provider through GitHub SSO.
+2. For stored GitHub CLI credentials, open GitHub **Settings > Applications >
+   Authorized OAuth Apps > GitHub CLI** and grant access to the organization
+   where offered. Organization approval may also be required.
+3. If using a classic personal access token, open **Settings > Developer settings >
+   Personal access tokens > Tokens (classic) > Configure SSO**, then authorize
+   the organization. Fine-grained tokens instead need the appropriate resource
+   owner, selected repositories, permissions, and any required organization approval.
+4. Check `gh auth status --hostname github.com` and retry with `--no-cache`.
+   Remember that `GH_TOKEN` or `GITHUB_TOKEN` overrides the stored CLI login.
+
+Being authenticated does not itself grant access to private organization
+repositories. Not every organization access denial includes an SSO header, so
+an ordinary `403` is not automatically diagnosed as SSO.
+See [GitHub's SSO guidance](https://docs.github.com/en/authentication/authenticating-with-single-sign-on).
+
 ## API cache
 
 Successful responses are cached for **five minutes** in

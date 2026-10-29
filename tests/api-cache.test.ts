@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiCache } from "../src/api-cache.js";
-import { createGitHubApiClient } from "../src/github-api.js";
+import { createGitHubApiClient, GitHubApiError } from "../src/github-api.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -84,4 +84,35 @@ describe("API caching", () => {
       fetch: async () => new Response("{}", { status: 429, headers: { "retry-after": "60" } }),
     }).getRepositoryJson("owner", "action", "")).rejects.toThrow("Retry after 60 seconds");
   });
+
+  it("recognizes organization SSO denial without exposing authorization URLs or credentials", async () => {
+    const path = await directory();
+    vi.stubEnv("ACTION_INSPECTOR_CACHE_DIR", path);
+    const fetch = vi.fn(async () => new Response("{}", {
+      status: 403,
+      headers: { "X-GitHub-SSO": "required; url=https://github.com/orgs/example/sso?authorization_request=private-value" },
+    }));
+    const client = createGitHubApiClient({ fetch, token: "secret-token", cache: true });
+    const error = await client.getRepositoryJson("owner", "action", "").catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(GitHubApiError);
+    expect(error).toMatchObject({ status: 403 });
+    const message = (error as Error).message;
+    expect(message).toContain("organization SSO authorization is required");
+    expect(message).toContain("GH_TOKEN and GITHUB_TOKEN override");
+    expect(message).not.toContain("private-value");
+    expect(message).not.toContain("secret-token");
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(await readdir(path)).toEqual([]);
+  });
+
+  it.each([undefined, "partial-results; organizations=123", "not-required"])(
+    "does not infer SSO from an ordinary access denial (%s)", async (sso) => {
+      const client = createGitHubApiClient({
+        fetch: async () => new Response("{}", {
+          status: 403, headers: sso ? { "x-github-sso": sso } : {},
+        }),
+      });
+      await expect(client.getRepositoryJson("owner", "action", "")).rejects.toThrow("rate limit or access denied");
+    },
+  );
 });
