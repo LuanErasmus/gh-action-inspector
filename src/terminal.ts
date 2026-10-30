@@ -29,7 +29,13 @@ function displayWidth(text: string): number {
     .reduce((total, width) => total + width, 0);
 }
 
-export function formatTable(headers: string[], rows: string[][], width = 100): string[] {
+export type CellColor = "green" | "yellow" | "cyan" | "red" | undefined;
+
+export function formatTable(
+  headers: string[], rows: string[][], width = 100,
+  colors?: (row: number, column: number) => CellColor,
+  separateBefore?: (row: number) => boolean,
+): string[] {
   const widths = headers.map((header, index) => Math.max(
     displayWidth(header), ...rows.map((row) => displayWidth(row[index])),
   ));
@@ -38,16 +44,21 @@ export function formatTable(headers: string[], rows: string[][], width = 100): s
     const largest = widths.indexOf(Math.max(...widths));
     widths[largest]--;
   }
-  const formatRow = (row: string[]) => {
-    const cells = row.map((cell, index) => wrapText(cell, widths[index], ""));
+  const formatRow = (row: string[], rowIndex: number) => {
+    const cells = row.map((cell, index) => wrapText(stripVTControlCharacters(cell), widths[index], ""));
     return Array.from({ length: Math.max(...cells.map((cell) => cell.length)) }, (_, line) =>
       `  | ${cells.map((cell, index) => {
         const value = cell[line] ?? "";
-        return value + " ".repeat(Math.max(0, widths[index] - displayWidth(value)));
+        const color = colors?.(rowIndex, index);
+        const styled = color && value ? styleText(color, value, { validateStream: false }) : value;
+        return styled + " ".repeat(Math.max(0, widths[index] - displayWidth(value)));
       }).join(" | ")} |`);
   };
   const divider = `  |-${widths.map((size) => "-".repeat(size)).join("-|-")}-|`;
-  return [...formatRow(headers), divider, ...rows.flatMap(formatRow)];
+  return [...formatRow(headers, -1), divider, ...rows.flatMap((row, index) => [
+    ...(index > 0 && separateBefore?.(index) ? [divider] : []),
+    ...formatRow(row, index),
+  ])];
 }
 
 /** Wrap prose and long identifiers without dropping characters. */
@@ -80,6 +91,8 @@ export function renderLines(
   lines: string[],
   options: DisplayOptions = {},
   literalLines: ReadonlySet<string> = new Set(),
+  fileHeadings: ReadonlySet<string> = new Set(),
+  lineColors: ReadonlyMap<string, CellColor> = new Map(),
 ): string[] {
   return lines.flatMap((line) => {
     const plain = stripVTControlCharacters(line);
@@ -87,15 +100,42 @@ export function renderLines(
     const literal = literalLines.has(line) || /^\s*uses:|^[+-]|^@@/.test(plain);
     const wrapped = options.width === undefined || literal ? plain.split("\n") : wrapText(plain, options.width);
     if (!options.color) return wrapped;
+    const explicitColor = lineColors.get(plain);
+    if (explicitColor) {
+      return wrapped.map((part) => styleText(explicitColor, part, { validateStream: false }));
+    }
+    if (fileHeadings.has(line)) {
+      return wrapped.map((part) => styleText(["bold", "magenta"], part, { validateStream: false }));
+    }
+    if (/^\d+ references? · /.test(plain)) {
+      return wrapped.map((part) => part.replace(
+        /\b([1-9]\d*) (pinned|unpinned|updates?|errors?|policy violations?)\b/g,
+        (match, count: string, label: string) => {
+          const color = label === "pinned" ? "green" : label === "unpinned" ? "yellow"
+            : label.startsWith("update") ? "cyan" : "red";
+          return match.replace(count, styleText(color, count, { validateStream: false }));
+        },
+      ));
+    }
+    if (/^\s*\|/.test(plain)) {
+      return (line !== plain ? [line] : wrapped).map((part) => part.split("|").map((cell) => {
+        const status = stripVTControlCharacters(cell).trim();
+        const style = status === "Pinned" ? "green"
+          : status === "Unpinned" ? "yellow"
+          : status === "Error" ? "red" : undefined;
+        if (style) return cell.replace(status, styleText(style, status, { validateStream: false }));
+        return cell.replace(/\[Update\]/g, (badge) => styleText("cyan", badge, { validateStream: false }));
+      }).join("|"));
+    }
     const style = /^\s*Before:$/.test(plain) ? "red"
       : /^\s*After:$/.test(plain) ? "green"
       : /\b(ERROR|Error|POLICY|Policy)\b/.test(plain) ? "red"
       : /\b(WARNING|Warning|Unpinned|Available|REVIEW)\b|! /.test(plain) ? "yellow"
       : /^\+[^+]|✓|\bPinned\b/.test(plain) ? "green"
       : /^-[^-]/.test(plain) ? "red"
-      : /^\S/.test(plain) ? "cyan" : undefined;
+      : /^\S/.test(plain) ? "bold" : undefined;
     return style ? wrapped.map((part) => styleText(
-      style === "cyan" ? ["bold", "cyan"] : style, part, { validateStream: false },
+      style, part, { validateStream: false },
     )) : wrapped;
   });
 }

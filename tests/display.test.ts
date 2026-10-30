@@ -70,12 +70,88 @@ describe("readable terminal reports", () => {
     expect(output.indexOf("ERROR")).toBeGreaterThan(output.indexOf(scan.rows[1].reference.slice(0, 12)));
   });
 
+  it.each(["scan", "pin", "upgrade"] as const)("sorts %s tables by Action name then source line without changing the report", (mode) => {
+    const file = ".github\\workflows\\ci.yml";
+    const rows: ScanReport["rows"] = [
+      { file, line: 2, reference: "actions/setup-node@v4", status: "Unpinned" },
+      { file, line: 30, reference: "actions/checkout@v3", status: "Unpinned" },
+      { file, line: 10, reference: `Actions/Checkout@${sha}`, status: "Pinned" },
+      { file, line: 5, reference: "actions/checkout/subpath@v4", status: "Unpinned" },
+    ];
+    const report: ScanReport = { mode, files: 1, rows, changes: [], errors: [] };
+    const original = structuredClone(report);
+    for (const width of [40, 120]) {
+      const output = formatScan(report, { width });
+      const tableLines = output.filter((line) => /^\s*\|\s*L\d+\s*\|/.test(line));
+      expect(tableLines.map((line) => line.match(/\bL\d+/)![0])).toEqual(["L10", "L30", "L5", "L2"]);
+    }
+    expect(report).toEqual(original);
+  });
+
+  it("shortens versioned labels but keeps branches, unknown refs, and narrow references visible", () => {
+    const report: ScanReport = {
+      mode: "scan", files: 1, changes: [], errors: [],
+      rows: [
+        { file: "ci.yml", line: 1, reference: `actions/checkout@${sha}`, status: "Pinned", version: "v4.0.0" },
+        { file: "ci.yml", line: 2, reference: "actions/checkout@v3", status: "Unpinned", version: "v3.0.0" },
+        { file: "ci.yml", line: 3, reference: "actions/checkout@main", status: "Unpinned", version: "v4.0.0" },
+        { file: "ci.yml", line: 4, reference: "actions/setup-node@v4", status: "Unpinned" },
+      ],
+    };
+    const wide = formatScan(report, { width: 120 });
+    const action = (line: number) => wide.find((text) => text.includes(`L${line} `))!.split("|")[2].trim();
+    expect(action(1)).toBe("actions/checkout");
+    expect(action(2)).toBe("actions/checkout");
+    expect(action(3)).toBe("actions/checkout@main");
+    expect(action(4)).toBe("actions/setup-node@v4");
+    expect(wide.filter((text) => text.startsWith("  |-"))).toHaveLength(2);
+    const narrow = formatScan(report, { width: 60 }).join("\n");
+    expect(narrow).toContain("actions/checkout@v3");
+    expect(wide.join("\n")).toContain("4 references · 1 pinned · 3 unpinned · 0 updates · 0 errors");
+  });
+
+  it("keeps file-specific discovery errors beside the file and colors only nonzero summary counts", () => {
+    const report: ScanReport = {
+      ...scan, errors: [".github\\workflows\\ci.yml: could not read dependency", "Unknown discovery failure"],
+    };
+    const plain = formatScan(report, { width: 120 });
+    const output = plain.join("\n");
+    expect(output.indexOf("ERROR: .github\\workflows\\ci.yml")).toBeLessThan(output.indexOf(".github\\workflows\\deploy.yml"));
+    expect(output).toContain("Discovery errors\n  ERROR: Unknown discovery failure");
+    const colored = formatScan(report, { width: 120, color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    expect(colored[1]).toContain("\x1b[32m1\x1b[39m pinned");
+    expect(colored[1]).not.toContain("\x1b[33m0");
+    expect(colored[1]).toContain("\x1b[36m1\x1b[39m update");
+  });
+
   it("moves version details below narrow tables instead of losing information", () => {
     const output = formatScan(scan, { width: 40 }).join("\n");
     expect(output).not.toContain("| Current");
     expect(output).toContain("Current: v4.0.0");
     expect(output).toContain("Latest: v7.0.0");
-    expect(output).toContain("Update: Available");
+    const actions = output.split("\n").filter((line) => line.startsWith("  | "))
+      .map((line) => line.split("|")[2]?.trim() ?? "").join("").replace(/\s/g, "");
+    expect(actions).toContain("[Update]");
+  });
+
+  it("keeps update notices in their table rows instead of detached line-number lists", () => {
+    const report: ScanReport = {
+      mode: "scan", files: 1, changes: [], errors: [],
+      rows: [49, 90, 131].map((line) => ({
+        file: "ci.yml", line, reference: `owner/action@v1`, status: "Unpinned",
+        version: "v1.0.0", latest: "v2.0.0", newerAvailable: true,
+      })),
+    };
+    const lines = formatScan(report, { width: 120 });
+    expect(lines.filter((line) => line.includes("[Update]"))).toHaveLength(3);
+    expect(lines.filter((line) => line.includes("[Update]"))
+      .every((line) => line.split("|")[2].includes("owner/action [Update]"))).toBe(true);
+    expect(lines.some((line) => line.includes("Update: Available"))).toBe(false);
+    expect(lines.some((line) => /^\s+L\d+$/.test(line))).toBe(false);
+    const pipes = lines.filter((line) => line.startsWith("  |"))
+      .map((line) => [...line.matchAll(/\|/g)].map((match) => match.index));
+    for (const positions of pipes) expect(positions).toEqual(pipes[0]);
   });
 
   it("aligns wide and combining characters within table cells", () => {
@@ -98,11 +174,74 @@ describe("readable terminal reports", () => {
     }
   });
 
-  it("uses equivalent readable text with or without ANSI colors", () => {
-    const plain = formatScan(scan, { width: 60 });
-    const colored = formatScan(scan, { width: 60, color: true });
+  it.each([40, 80, 120])("uses equivalent readable text with or without ANSI colors at %i columns", (width) => {
+    const plain = formatScan(scan, { width });
+    const colored = formatScan(scan, { width, color: true });
     expect(colored.some((line) => line.includes("\x1b["))).toBe(true);
     expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+  });
+
+  it.each(["scan", "upgrade"] as const)("colors %s versions using pin state and update availability", (mode) => {
+    const report: ScanReport = {
+      mode, files: 1, changes: [], errors: [],
+      rows: [
+        { file: "ci.yml", line: 1, reference: "owner/a@v1", status: "Pinned", version: "v1.0.0", latest: "v2.0.0", newerAvailable: true },
+        { file: "ci.yml", line: 2, reference: "owner/b@v1", status: "Unpinned", version: "v1.0.0", latest: "v2.0.0", newerAvailable: true },
+        { file: "ci.yml", line: 3, reference: "owner/c@v1", status: "Pinned", version: "v1.0.0", latest: "v1.0.0", newerAvailable: false },
+        { file: "ci.yml", line: 4, reference: "owner/d@v1", status: "Unpinned", version: "v1.0.0", latest: "v1.0.0", newerAvailable: false },
+      ],
+    };
+    const colored = formatScan(report, { width: 120, color: true });
+    const row = (line: number) => colored.find((value) => value.includes(`L${line} `))!;
+    expect(row(1)).toContain("\x1b[32mv1.0.0\x1b[39m");
+    expect(row(2)).toContain("\x1b[33mv1.0.0\x1b[39m");
+    for (const line of [1, 2]) {
+      expect(row(line)).toContain("\x1b[36mv2.0.0\x1b[39m");
+      expect(row(line)).toContain("\x1b[36m[Update]\x1b[39m");
+    }
+    expect(row(1)).toContain("\x1b[32mPinned\x1b[39m");
+    expect(row(2)).toContain("\x1b[33mUnpinned\x1b[39m");
+    expect(row(3).match(/\x1b\[32mv1.0.0/g)).toHaveLength(2);
+    expect(row(4).match(/\x1b\[33mv1.0.0/g)).toHaveLength(2);
+    expect(colored.map(stripVTControlCharacters)).toEqual(formatScan(report, { width: 120 }));
+  });
+
+  it("colors pin status independently from update badges, leaving names and versions neutral", () => {
+    const table = formatTable(["Action", "Status", "Current"], [
+      ["owner/action@v1 [Update]", "Pinned", "v1.0.0"],
+      ["owner/other@v1 [Update]", "Unpinned", "v1.0.0"],
+      ["./local", "Local dependency", "-"],
+      ["owner/failed@v1", "Error", "-"],
+    ], 120);
+    const plain = renderLines(table);
+    const colored = renderLines(table, { color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    const output = colored.join("\n");
+    expect(output).toContain("\x1b[32mPinned\x1b[39m");
+    expect(output).toContain("\x1b[33mUnpinned\x1b[39m");
+    expect(output).toContain("\x1b[36m[Update]\x1b[39m");
+    expect(output).toContain("\x1b[31mError\x1b[39m");
+    for (const line of colored) {
+      expect(line.startsWith("  |")).toBe(true);
+      expect(line).not.toMatch(/\x1b\[\d+mowner\//);
+    }
+    expect(colored.find((line) => line.includes("./local"))).not.toContain("\x1b[");
+    expect(renderLines(["ci.yml"], { color: true })[0]).toBe("\x1b[1mci.yml\x1b[22m");
+  });
+
+  it("uses bold magenta only for file headings, including wrapped paths", () => {
+    const file = ".github/workflows/long-workflow-name.yml";
+    const lines = ["Workflow scan", file, "Changes"];
+    const colored = renderLines(lines, { color: true, width: 20 }, new Set(), new Set([file]));
+    expect(colored.map(stripVTControlCharacters)).toEqual(renderLines(lines, { width: 20 }));
+    const pathLines = colored.slice(1, -1);
+    expect(pathLines.length).toBeGreaterThan(1);
+    for (const line of pathLines) {
+      expect(line).toContain("\x1b[1m");
+      expect(line).toContain("\x1b[35m");
+    }
+    expect(colored[0]).not.toContain("\x1b[35m");
+    expect(colored.at(-1)).not.toContain("\x1b[35m");
   });
 
   it("keeps copyable YAML intact in labeled change cards at narrow widths", () => {
@@ -120,6 +259,53 @@ describe("readable terminal reports", () => {
     expect(lines).toContain("    Before:");
     expect(lines).toContain("    After:");
     expect(lines.join("\n")).not.toContain("@@");
+  });
+
+  it("summarizes unchanged pinned files only in pin previews", () => {
+    const report: ScanReport = {
+      mode: "pin", files: 2, errors: [],
+      rows: [
+        { file: "pinned.yml", line: 2, reference: `actions/checkout@${sha}`, status: "Pinned" },
+        { file: "changed.yml", line: 4, reference: "actions/checkout@v4", status: "Unpinned" },
+      ],
+      changes: [{ file: "changed.yml", line: 4, before: "uses: actions/checkout@v4", after: `uses: actions/checkout@${sha}` }],
+    };
+    const plain = formatScan(report, { width: 120 });
+    expect(plain.join("\n")).toContain("pinned.yml\n  All Actions already SHA-pinned; no changes needed.");
+    expect(plain.filter((line) => line.includes("| Line"))).toHaveLength(1);
+    expect(plain.join("\n")).toContain("L4");
+    expect(formatScan(report, { width: 120, color: true }).map(stripVTControlCharacters)).toEqual(plain);
+    for (const other of [{ ...report, mode: "scan" as const }, { ...report, mode: "upgrade" as const }, { ...report, written: [] }]) {
+      expect(formatScan(other).join("\n")).not.toContain("All Actions already SHA-pinned");
+    }
+  });
+
+  it.each([
+    { status: "Error", error: "Lookup failed" },
+    { status: "local" },
+    { status: "expression" },
+    { status: "docker" },
+    { status: "Unpinned" },
+    { status: "Pinned", warning: "Release lookup failed" },
+    { status: "Pinned", archived: true },
+  ])("retains pin-preview tables for unresolved references or diagnostics: %j", (state) => {
+    const report: ScanReport = {
+      mode: "pin", files: 1, errors: [], changes: [],
+      rows: [{ file: "ci.yml", line: 2, reference: "owner/action@v1", ...state }],
+    };
+    const output = formatScan(report).join("\n");
+    expect(output).toContain("| Line");
+    expect(output).not.toContain("All Actions already SHA-pinned");
+  });
+
+  it("retains pinned file tables when discovery or policy diagnostics apply", () => {
+    const report: ScanReport = {
+      mode: "pin", files: 1, errors: ["ci.yml: dependency could not be read"], changes: [],
+      rows: [{ file: "ci.yml", line: 2, reference: `owner/action@${sha}`, status: "Pinned" }],
+    };
+    expect(formatScan(report).join("\n")).toContain("| Line");
+    expect(formatScan({ ...report, errors: [], policyFailures: ["ci.yml:2: publisher not allowed"] }).join("\n"))
+      .toContain("| Line");
   });
 
   it.each(["pin", "upgrade"] as const)("groups %s change cards once per file with plain/color parity", (mode) => {
@@ -158,7 +344,7 @@ describe("readable terminal reports", () => {
     expect(output).not.toContain("\x1b[");
   });
 
-  it("links full input descriptions while keeping output paragraphs indented", () => {
+  it("links full input descriptions and presents output descriptions in a compact table", () => {
     const report: InspectionReport = {
       ...inspection,
       details: {
@@ -170,7 +356,10 @@ describe("readable terminal reports", () => {
     const output = formatText(report, false, 80).join("\n");
     expect(output).not.toContain("First paragraph.");
     expect(output).not.toContain("Second paragraph.");
-    expect(output).toContain("  Output result\n    First output line.\n    Second output line.");
+    expect(output).toContain("| Output");
+    expect(output).toContain("| Description");
+    expect(output).toContain("First output line.");
+    expect(output).toContain("Second output line.");
   });
 
   it("distinguishes missing and empty defaults and links nested metadata exactly", () => {
@@ -199,6 +388,41 @@ describe("readable terminal reports", () => {
     }, false, 80).join("\n");
     expect(output).toContain("No inputs declared.");
     expect(output).not.toContain("| Input");
+  });
+
+  it.each([40, 80, 120])("colors inspection versions independently with plain-text parity at %i columns", (width) => {
+    const report: InspectionReport = {
+      ...inspection,
+      latestRelease: {
+        version: "v2.0.0", sha, releaseNotesUrl: "https://github.com/actions/example/releases/tag/v2.0.0",
+        newerAvailable: true, pinned: `actions/example@${sha}`,
+      },
+    };
+    const colored = formatText(report, true, width);
+    // Colored output also includes status markers; remove them for text parity.
+    const normalize = (line: string) => stripVTControlCharacters(line).replace(/[✓!✗] /g, "");
+    expect(colored.some((line) => line.includes("\x1b[36m") && line.includes("v2.0.0"))).toBe(true);
+    expect(colored.some((line) => line.includes("\x1b[33m") && line.includes("Immutable"))).toBe(true);
+    expect(colored.filter((line) => line.includes("uses:")).map(stripVTControlCharacters))
+      .toEqual(formatText(report, false, width).filter((line) => line.includes("uses:")));
+    expect(normalize(colored[0])).toBe(`${report.action}@v1`);
+  });
+
+  it("shows empty and undocumented output states explicitly", () => {
+    expect(formatText({ ...inspection, details: { ...details, outputs: {} } }, false).join("\n"))
+      .toContain("No outputs declared.");
+    expect(formatText({ ...inspection, details: { ...details, outputs: { result: {} } } }, false).join("\n"))
+      .toContain("(not documented)");
+  });
+
+  it.each([40, 80, 120])("preserves comparison text with target highlighting at %i columns", (width) => {
+    const comparison = compareActionDetails(details, details);
+    const args = ["owner/action@v1", "owner/action@v2", comparison, "https://github.com/owner/action/releases"] as const;
+    const plain = formatComparison(...args, { width });
+    const colored = formatComparison(...args, { width, color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    expect(colored.find((line) => line.includes("After:"))).toContain("\x1b[36m");
+    expect(colored.find((line) => line.includes("Before:"))).not.toContain("\x1b[33m");
   });
 
   it("groups comparison findings separately from manual-review guidance", () => {

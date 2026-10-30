@@ -221,7 +221,7 @@ describe("repository scan", () => {
     expect(deps.getLatestRelease).toHaveBeenCalledTimes(1);
     expect(deps.getMetadata).toHaveBeenCalledTimes(1);
     const output = formatScan(report).join("\n");
-    for (const text of ["ci.yml", "L7", "owner/action@v1", "Unpinned", "Available", "v2"]) {
+    for (const text of ["ci.yml", "L7", "owner/action", "v1.0.0", "Unpinned", "[Update]", "v2"]) {
       expect(output).toContain(text);
     }
   });

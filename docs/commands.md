@@ -108,25 +108,33 @@ gh action-inspector scan --json
 The directory defaults to the current working directory. Results use a compact
 table per workflow or local Action file. Summary totals appear first, followed
 by line numbers, Action references, pin status, and current/latest versions.
-Update notices, errors, and warnings appear below each table, labeled with the
-affected line number; discovery errors and CI policy findings have separate sections.
+Update availability appears as an `[Update]` badge next to the Action
+reference in its table cell, wrapping within the cell on narrow terminals.
+Status retains the pin state; unknown availability remains in Status.
+Errors, warnings, and narrow-terminal version details appear
+below each table, labeled with both the line number and Action reference.
+Discovery errors and CI policy findings have separate sections.
 Full SHAs are abbreviated in the summary but retained in JSON.
 Long cell values wrap within their columns rather than being truncated.
 Below 80 columns, version details move below the table to keep it readable.
 Pin previews omit version columns; upgrade tables show `Target` instead of `Latest`.
+In pin previews (including `--dry-run`), unchanged files whose references are all
+SHA-pinned show a one-line "All Actions already SHA-pinned; no changes needed."
+summary instead of a table. Files with proposed changes, unresolved references,
+warnings, errors, or policy findings retain their tables. Empty files still
+show "No uses found in file." JSON and `pin --write` output are unchanged.
 
 ```text
-Workflow scan: 1 file, 2 references
-1 pinned | 1 unpinned | 1 updates available | 0 errors
+Workflow scan: 1 file
+2 references · 1 pinned · 1 unpinned · 1 update · 0 errors
+Pinning locks the ref; Latest/Target shows version freshness. Equal versions do not imply a pinned ref.
 
 .github\workflows\ci.yml
-  | Line | Action                       | Status   | Current | Latest |
-  |------|------------------------------|----------|---------|--------|
-  | L16  | actions/checkout@3d3c42e...   | Pinned   | v7.0.1  | v7.0.1 |
-  | L20  | actions/setup-node@v6        | Unpinned | v6.0.0  | v7.1.0 |
-
-  L20
-    Update: Available
+  | Line | Action                      | Status   | Current | Latest |
+  |------|-----------------------------|----------|---------|--------|
+  | L16  | actions/checkout            | Pinned   | v7.0.1  | v7.0.1 |
+  |------|-----------------------------|----------|---------|--------|
+  | L20  | actions/setup-node [Update] | Unpinned | v6.0.0  | v7.1.0 |
 ```
 
 ### Discovery scope
@@ -230,8 +238,39 @@ command. See [compatibility limits](pinning-and-upgrades.md#compatibility-checks
 Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
 inputs use a compact table; deprecation warnings remain outside the table.
+Detailed outputs use an Output/Description table, with explicit messages for
+missing descriptions or no declared outputs. Inspection colors current Version
+and Immutable fields by pin state, and latest-release fields cyan when an
+update exists. Comparison highlights its After reference cyan as the target
+(not as a pin-state indicator); findings remain yellow and manual-review
+guidance stays separate. JSON and copyable pin suggestions are unchanged.
+Within each file, scan, pin, and upgrade tables sort by Action name (ignoring
+case and version), then by source line. Repeated Actions stay together even
+when their versions differ. Line numbers still refer to the original file;
+JSON reports, source files, and change previews retain their existing order.
+Subtle table dividers separate different Actions. When Current is visible and
+identifies a resolved version, numeric-tag and SHA references omit the ref from
+the Action label. Branches, unresolved references, pin tables, and narrow tables
+retain their references. Full references remain in JSON and change previews.
+The compact summary colors only nonzero status counts, and a single legend
+explains that pinning and version freshness are independent. Reference errors
+and discovery errors associated with a displayed file appear below its table;
+unassociated discovery errors remain in the Discovery errors section.
 
-When terminal color support is detected, headings and statuses are colored.
+Interactive terminals show an animated magenta progress spinner with elapsed
+time while inspecting, comparing, scanning, pinning, or upgrading. Repository
+commands also show discovery and reference-checking progress. The status clears
+before results or errors appear. Progress uses stderr only when it is a terminal;
+redirected stderr stays quiet and JSON on stdout remains unchanged.
+
+When terminal color support is detected, file headings are bold magenta.
+Tables color individual pin states (`Pinned` green, `Unpinned`
+yellow), `[Update]` badges cyan, and errors red, rather than coloring whole rows.
+Current versions match the pin state: green for pinned, yellow for unpinned.
+Latest/Target versions are cyan when an update is available, otherwise they
+match the pin state. Missing version placeholders remain neutral.
+Action names, local dependencies, and unknown availability remain neutral.
+Warnings are yellow and policy failures are red.
 Single-reference inspection also uses status markers (✓, !, ✗); `!` avoids
 wide warning-emoji rendering issues. Colors and icons are disabled when output
 is redirected/piped or `NO_COLOR` is set.

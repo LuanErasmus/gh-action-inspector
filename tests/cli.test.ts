@@ -70,7 +70,8 @@ describe("action-inspector CLI", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout.join("\n")).toContain("Runtime: node20");
     expect(result.stdout.join("\n")).toMatch(/\| token\s*\| Yes\s*\|/);
-    expect(result.stdout.join("\n")).toContain("Output result\n    Result");
+    expect(result.stdout.join("\n")).toContain("| Output");
+    expect(result.stdout.join("\n")).toContain("Result");
   });
 
   it("preserves commit inspection when the repository has no releases", async () => {
