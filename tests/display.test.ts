@@ -75,7 +75,28 @@ describe("readable terminal reports", () => {
     expect(output).not.toContain("| Current");
     expect(output).toContain("Current: v4.0.0");
     expect(output).toContain("Latest: v7.0.0");
-    expect(output).toContain("Update: Available");
+    const actions = output.split("\n").filter((line) => line.startsWith("  | "))
+      .map((line) => line.split("|")[2]?.trim() ?? "").join("").replace(/\s/g, "");
+    expect(actions).toContain("[Update]");
+  });
+
+  it("keeps update notices in their table rows instead of detached line-number lists", () => {
+    const report: ScanReport = {
+      mode: "scan", files: 1, changes: [], errors: [],
+      rows: [49, 90, 131].map((line) => ({
+        file: "ci.yml", line, reference: `owner/action@v1`, status: "Unpinned",
+        version: "v1.0.0", latest: "v2.0.0", newerAvailable: true,
+      })),
+    };
+    const lines = formatScan(report, { width: 120 });
+    expect(lines.filter((line) => line.includes("[Update]"))).toHaveLength(3);
+    expect(lines.filter((line) => line.includes("[Update]"))
+      .every((line) => line.split("|")[2].includes("owner/action@v1 [Update]"))).toBe(true);
+    expect(lines.some((line) => line.includes("Update: Available"))).toBe(false);
+    expect(lines.some((line) => /^\s+L\d+$/.test(line))).toBe(false);
+    const pipes = lines.filter((line) => line.startsWith("  |"))
+      .map((line) => [...line.matchAll(/\|/g)].map((match) => match.index));
+    for (const positions of pipes) expect(positions).toEqual(pipes[0]);
   });
 
   it("aligns wide and combining characters within table cells", () => {
@@ -98,11 +119,74 @@ describe("readable terminal reports", () => {
     }
   });
 
-  it("uses equivalent readable text with or without ANSI colors", () => {
-    const plain = formatScan(scan, { width: 60 });
-    const colored = formatScan(scan, { width: 60, color: true });
+  it.each([40, 80, 120])("uses equivalent readable text with or without ANSI colors at %i columns", (width) => {
+    const plain = formatScan(scan, { width });
+    const colored = formatScan(scan, { width, color: true });
     expect(colored.some((line) => line.includes("\x1b["))).toBe(true);
     expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+  });
+
+  it.each(["scan", "upgrade"] as const)("colors %s versions using pin state and update availability", (mode) => {
+    const report: ScanReport = {
+      mode, files: 1, changes: [], errors: [],
+      rows: [
+        { file: "ci.yml", line: 1, reference: "owner/a@v1", status: "Pinned", version: "v1.0.0", latest: "v2.0.0", newerAvailable: true },
+        { file: "ci.yml", line: 2, reference: "owner/b@v1", status: "Unpinned", version: "v1.0.0", latest: "v2.0.0", newerAvailable: true },
+        { file: "ci.yml", line: 3, reference: "owner/c@v1", status: "Pinned", version: "v1.0.0", latest: "v1.0.0", newerAvailable: false },
+        { file: "ci.yml", line: 4, reference: "owner/d@v1", status: "Unpinned", version: "v1.0.0", latest: "v1.0.0", newerAvailable: false },
+      ],
+    };
+    const colored = formatScan(report, { width: 120, color: true });
+    const row = (line: number) => colored.find((value) => value.includes(`L${line} `))!;
+    expect(row(1)).toContain("\x1b[32mv1.0.0\x1b[39m");
+    expect(row(2)).toContain("\x1b[33mv1.0.0\x1b[39m");
+    for (const line of [1, 2]) {
+      expect(row(line)).toContain("\x1b[36mv2.0.0\x1b[39m");
+      expect(row(line)).toContain("\x1b[36m[Update]\x1b[39m");
+    }
+    expect(row(1)).toContain("\x1b[32mPinned\x1b[39m");
+    expect(row(2)).toContain("\x1b[33mUnpinned\x1b[39m");
+    expect(row(3).match(/\x1b\[32mv1.0.0/g)).toHaveLength(2);
+    expect(row(4).match(/\x1b\[33mv1.0.0/g)).toHaveLength(2);
+    expect(colored.map(stripVTControlCharacters)).toEqual(formatScan(report, { width: 120 }));
+  });
+
+  it("colors pin status independently from update badges, leaving names and versions neutral", () => {
+    const table = formatTable(["Action", "Status", "Current"], [
+      ["owner/action@v1 [Update]", "Pinned", "v1.0.0"],
+      ["owner/other@v1 [Update]", "Unpinned", "v1.0.0"],
+      ["./local", "Local dependency", "-"],
+      ["owner/failed@v1", "Error", "-"],
+    ], 120);
+    const plain = renderLines(table);
+    const colored = renderLines(table, { color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    const output = colored.join("\n");
+    expect(output).toContain("\x1b[32mPinned\x1b[39m");
+    expect(output).toContain("\x1b[33mUnpinned\x1b[39m");
+    expect(output).toContain("\x1b[36m[Update]\x1b[39m");
+    expect(output).toContain("\x1b[31mError\x1b[39m");
+    for (const line of colored) {
+      expect(line.startsWith("  |")).toBe(true);
+      expect(line).not.toMatch(/\x1b\[\d+mowner\//);
+    }
+    expect(colored.find((line) => line.includes("./local"))).not.toContain("\x1b[");
+    expect(renderLines(["ci.yml"], { color: true })[0]).toBe("\x1b[1mci.yml\x1b[22m");
+  });
+
+  it("uses bold magenta only for file headings, including wrapped paths", () => {
+    const file = ".github/workflows/long-workflow-name.yml";
+    const lines = ["Workflow scan", file, "Changes"];
+    const colored = renderLines(lines, { color: true, width: 20 }, new Set(), new Set([file]));
+    expect(colored.map(stripVTControlCharacters)).toEqual(renderLines(lines, { width: 20 }));
+    const pathLines = colored.slice(1, -1);
+    expect(pathLines.length).toBeGreaterThan(1);
+    for (const line of pathLines) {
+      expect(line).toContain("\x1b[1m");
+      expect(line).toContain("\x1b[35m");
+    }
+    expect(colored[0]).not.toContain("\x1b[35m");
+    expect(colored.at(-1)).not.toContain("\x1b[35m");
   });
 
   it("keeps copyable YAML intact in labeled change cards at narrow widths", () => {

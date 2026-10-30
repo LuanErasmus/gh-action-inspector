@@ -108,8 +108,12 @@ gh action-inspector scan --json
 The directory defaults to the current working directory. Results use a compact
 table per workflow or local Action file. Summary totals appear first, followed
 by line numbers, Action references, pin status, and current/latest versions.
-Update notices, errors, and warnings appear below each table, labeled with the
-affected line number; discovery errors and CI policy findings have separate sections.
+Update availability appears as an `[Update]` badge next to the Action
+reference in its table cell, wrapping within the cell on narrow terminals.
+Status retains the pin state; unknown availability remains in Status.
+Errors, warnings, and narrow-terminal version details appear
+below each table, labeled with both the line number and Action reference.
+Discovery errors and CI policy findings have separate sections.
 Full SHAs are abbreviated in the summary but retained in JSON.
 Long cell values wrap within their columns rather than being truncated.
 Below 80 columns, version details move below the table to keep it readable.
@@ -120,13 +124,10 @@ Workflow scan: 1 file, 2 references
 1 pinned | 1 unpinned | 1 updates available | 0 errors
 
 .github\workflows\ci.yml
-  | Line | Action                       | Status   | Current | Latest |
-  |------|------------------------------|----------|---------|--------|
-  | L16  | actions/checkout@3d3c42e...   | Pinned   | v7.0.1  | v7.0.1 |
-  | L20  | actions/setup-node@v6        | Unpinned | v6.0.0  | v7.1.0 |
-
-  L20
-    Update: Available
+  | Line | Action                                         | Status   | Current | Latest |
+  |------|------------------------------------------------|----------|---------|--------|
+  | L16  | actions/checkout@3d3c42e...                     | Pinned   | v7.0.1  | v7.0.1 |
+  | L20  | actions/setup-node@v6 [Update]                  | Unpinned | v6.0.0  | v7.1.0 |
 ```
 
 ### Discovery scope
@@ -231,7 +232,14 @@ Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
 inputs use a compact table; deprecation warnings remain outside the table.
 
-When terminal color support is detected, headings and statuses are colored.
+When terminal color support is detected, file headings are bold magenta.
+Tables color individual pin states (`Pinned` green, `Unpinned`
+yellow), `[Update]` badges cyan, and errors red, rather than coloring whole rows.
+Current versions match the pin state: green for pinned, yellow for unpinned.
+Latest/Target versions are cyan when an update is available, otherwise they
+match the pin state. Missing version placeholders remain neutral.
+Action names, local dependencies, and unknown availability remain neutral.
+Warnings are yellow and policy failures are red.
 Single-reference inspection also uses status markers (✓, !, ✗); `!` avoids
 wide warning-emoji rendering issues. Colors and icons are disabled when output
 is redirected/piped or `NO_COLOR` is set.

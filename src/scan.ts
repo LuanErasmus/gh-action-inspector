@@ -474,11 +474,13 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
     if (!rows.length) return ["", file, "  No uses found in file."];
     const status = (row: ScanRow) => row.status === "local" ? "Local dependency"
       : row.status === "expression" ? "Dynamic / not resolved"
-      : row.status === "docker" ? "Docker / not resolved" : row.status;
+      : row.status === "docker" ? "Docker / not resolved"
+      : report.mode === "scan" && row.status !== "Error" && row.publisher && row.newerAvailable === undefined
+        ? `${row.status}\nUpdate: Unknown` : row.status;
     const cells = rows.map((row) => {
       const reference = row.reference.replace(/@([a-f0-9]{40})$/i, (_, sha: string) => `@${sha.slice(0, 7)}...`);
       return [
-        `L${row.line}`, reference,
+        `L${row.line}`, `${reference}${row.newerAvailable ? " [Update]" : ""}`,
         ...(showStatus ? [status(row)] : []),
         ...(showVersions ? [row.version ?? "-", row.latest ?? "-"] : []),
       ];
@@ -488,21 +490,26 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
         ...(!showStatus ? [`Status: ${status(row)}`] : []),
         ...(!showVersions && row.version ? [`Current: ${row.version}`] : []),
         ...(!showVersions && row.latest ? [`${versionHeader}: ${row.latest}`] : []),
-        ...(row.newerAvailable ? ["Update: Available"] : []),
-        ...(report.mode === "scan" && row.status !== "Error" && row.publisher && row.newerAvailable === undefined
-          ? ["Update: Unknown"] : []),
         ...(row.error ? [`ERROR: ${row.error}`] : []),
         ...(row.warning ? [`WARNING: ${row.warning}`] : []),
         ...(row.archived ? [`WARNING: ${row.reference} is archived.`] : []),
       ];
-      return details.length ? [`  L${row.line}`, ...details.map((detail) => `    ${detail}`)] : [];
+      return details.length ? [`  L${row.line} - ${row.reference}`, ...details.map((detail) => `    ${detail}`)] : [];
     });
     return [
       "", file,
       ...formatTable([
         "Line", "Action", ...(showStatus ? ["Status"] : []),
         ...(showVersions ? ["Current", versionHeader] : []),
-      ], cells, width),
+      ], cells, width, options.color ? (rowIndex, column) => {
+        if (rowIndex < 0 || !showVersions) return undefined;
+        const versionColumn = showStatus ? 3 : 2;
+        if (column !== versionColumn && column !== versionColumn + 1) return undefined;
+        const row = rows[rowIndex];
+        if (cells[rowIndex][column] === "-") return undefined;
+        if (column === versionColumn + 1 && row.newerAvailable) return "cyan";
+        return row.status === "Pinned" ? "green" : row.status === "Unpinned" ? "yellow" : undefined;
+      } : undefined),
       ...(notes.length ? ["", ...notes] : []),
     ];
   });
@@ -575,5 +582,6 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
     ...(report.rows.some((row) => ["local", "docker", "expression"].includes(row.status))
       ? ["Local references are followed when present; Docker references and expressions are not resolved or changed."]
       : []),
-  ], options, new Set(report.changes.flatMap((change) => [change.before, change.after])));
+  ], options, new Set(report.changes.flatMap((change) => [change.before, change.after])),
+  new Set([...groups.keys(), ...changesByFile.keys()]));
 }
