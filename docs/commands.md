@@ -232,6 +232,12 @@ Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
 inputs use a compact table; deprecation warnings remain outside the table.
 
+Interactive terminals show an animated magenta progress spinner with elapsed
+time while inspecting, comparing, scanning, pinning, or upgrading. Repository
+commands also show discovery and reference-checking progress. The status clears
+before results or errors appear. Progress uses stderr only when it is a terminal;
+redirected stderr stays quiet and JSON on stdout remains unchanged.
+
 When terminal color support is detected, file headings are bold magenta.
 Tables color individual pin states (`Pinned` green, `Unpinned`
 yellow), `[Update]` badges cyan, and errors red, rather than coloring whole rows.

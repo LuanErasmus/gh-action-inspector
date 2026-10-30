@@ -171,6 +171,7 @@ export async function runCli(
           `${after.owner}/${after.repository}/${after.path ?? ""}`.toLowerCase()) {
         throw new Error("Compare requires two versions of the same Action.");
       }
+      output.status?.(`Comparing ${references[0]} and ${references[1]}…`);
       const resolved = await Promise.all([dependencies.resolve(before), dependencies.resolve(after)]);
       const details = dependencies.inspectAction ?? inspectAction;
       const [oldDetails, newDetails] = await Promise.all([
@@ -181,11 +182,13 @@ export async function runCli(
         before: oldDetails, after: newDetails, comparison,
         releaseNotes: `https://github.com/${after.owner}/${after.repository}/releases`,
       };
+      output.status?.(null);
       if (args.includes("--json")) output.stdout(JSON.stringify(report, null, 2));
       else formatComparison(references[0], references[1], comparison, report.releaseNotes, output)
         .forEach((line) => output.stdout(line));
       return 0;
     } catch (error) {
+      output.status?.(null);
       output.stderr(error instanceof Error ? error.message : "Could not compare Actions.");
       return 1;
     }
@@ -200,7 +203,9 @@ export async function runCli(
     try {
       const parsed = parseRepositoryOptions(args.slice(1), mode);
       output.status?.(mode === "pin" ? "Preparing pin preview..." : "Scanning workflows...");
-      const report = await scanRepository(parsed.directory, mode, dependencies, parsed.options);
+      const report = await scanRepository(parsed.directory, mode, dependencies, {
+        ...parsed.options, onProgress: (message) => output.status?.(message),
+      });
       output.status?.(null);
       if (parsed.json) {
         output.stdout(JSON.stringify(report, null, 2));

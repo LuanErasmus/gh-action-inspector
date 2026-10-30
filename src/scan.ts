@@ -247,6 +247,7 @@ export interface ScanReport {
 }
 
 export interface ScanOptions {
+  onProgress?: (message: string) => void;
   write?: boolean;
   policy?: UpgradePolicy;
   minReleaseAge?: number;
@@ -260,6 +261,7 @@ export async function scanRepository(
   dependencies: CliDependencies,
   options: ScanOptions = {},
 ): Promise<ScanReport> {
+  options.onProgress?.("Discovering workflows and local actions…");
   const discovery = await discoverWorkflows(directory);
   const policy = options.policy ?? "minor";
   const minReleaseAge = options.minReleaseAge ?? (policy === "latest" ? 7 : 0);
@@ -353,6 +355,7 @@ export async function scanRepository(
   }
 
   for (const usage of discovery.usages) {
+    options.onProgress?.(`Checking ${usage.reference}…  ${report.rows.length}/${discovery.usages.length}`);
     const row: ScanRow = {
       file: usage.file, line: usage.line, reference: usage.reference, status: usage.kind,
     };
@@ -392,6 +395,7 @@ export async function scanRepository(
       row.error = message(error);
     }
     report.rows.push(row);
+    options.onProgress?.(`Checked ${report.rows.length}/${discovery.usages.length} references`);
   }
 
   for (const [file, edits] of replacements) {
@@ -433,6 +437,7 @@ export async function scanRepository(
   }
   if (failures.length) report.policyFailures = failures;
   if (options.write && !report.errors.length && !report.rows.some((row) => row.error) && !failures.length) {
+    options.onProgress?.("Verifying and writing changes…");
     // Preflight every file before writing any; never overwrite a concurrent edit.
     for (const [file, change] of updatedFiles) {
       if (await readFile(join(discovery.root, file), "utf8") !== change.before) {
