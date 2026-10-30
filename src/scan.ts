@@ -477,6 +477,8 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   const versionHeader = report.mode === "upgrade" ? "Target" : "Latest";
   const references = [...groups].flatMap(([file, rows]) => {
     if (!rows.length) return ["", file, "  No uses found in file."];
+    const actionName = (row: ScanRow) => row.reference.replace(/@[^@]*$/, "").toLowerCase();
+    rows.sort((a, b) => actionName(a).localeCompare(actionName(b), "en") || a.line - b.line);
     const status = (row: ScanRow) => row.status === "local" ? "Local dependency"
       : row.status === "expression" ? "Dynamic / not resolved"
       : row.status === "docker" ? "Docker / not resolved"

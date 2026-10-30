@@ -70,6 +70,24 @@ describe("readable terminal reports", () => {
     expect(output.indexOf("ERROR")).toBeGreaterThan(output.indexOf(scan.rows[1].reference.slice(0, 12)));
   });
 
+  it.each(["scan", "pin", "upgrade"] as const)("sorts %s tables by Action name then source line without changing the report", (mode) => {
+    const file = ".github\\workflows\\ci.yml";
+    const rows: ScanReport["rows"] = [
+      { file, line: 2, reference: "actions/setup-node@v4", status: "Unpinned" },
+      { file, line: 30, reference: "actions/checkout@v3", status: "Unpinned" },
+      { file, line: 10, reference: `Actions/Checkout@${sha}`, status: "Pinned" },
+      { file, line: 5, reference: "actions/checkout/subpath@v4", status: "Unpinned" },
+    ];
+    const report: ScanReport = { mode, files: 1, rows, changes: [], errors: [] };
+    const original = structuredClone(report);
+    for (const width of [40, 120]) {
+      const output = formatScan(report, { width });
+      const tableLines = output.filter((line) => /^\s*\|\s*L\d+\s*\|/.test(line));
+      expect(tableLines.map((line) => line.match(/\bL\d+/)![0])).toEqual(["L10", "L30", "L5", "L2"]);
+    }
+    expect(report).toEqual(original);
+  });
+
   it("moves version details below narrow tables instead of losing information", () => {
     const output = formatScan(scan, { width: 40 }).join("\n");
     expect(output).not.toContain("| Current");

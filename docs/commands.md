@@ -231,6 +231,10 @@ command. See [compatibility limits](pinning-and-upgrades.md#compatibility-checks
 Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
 inputs use a compact table; deprecation warnings remain outside the table.
+Within each file, scan, pin, and upgrade tables sort by Action name (ignoring
+case and version), then by source line. Repeated Actions stay together even
+when their versions differ. Line numbers still refer to the original file;
+JSON reports, source files, and change previews retain their existing order.
 
 Interactive terminals show an animated magenta progress spinner with elapsed
 time while inspecting, comparing, scanning, pinning, or upgrading. Repository
