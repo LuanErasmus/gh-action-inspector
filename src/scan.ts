@@ -475,6 +475,7 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   const showVersions = report.mode !== "pin" && width >= 80;
   const showStatus = width >= 32;
   const versionHeader = report.mode === "upgrade" ? "Target" : "Latest";
+  const changedFiles = new Set(report.changes.map((change) => change.file));
   const fileErrors = new Map<string, string[]>();
   const otherErrors: string[] = [];
   for (const error of report.errors) {
@@ -486,6 +487,11 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   const references = [...groups].flatMap(([file, rows]) => {
     const errors = (fileErrors.get(file) ?? []).map((error) => `  ERROR: ${error}`);
     if (!rows.length) return ["", file, "  No uses found in file.", ...errors];
+    if (report.mode === "pin" && report.written === undefined && !changedFiles.has(file) &&
+        !errors.length && !report.policyFailures?.some((failure) => failure.startsWith(`${file}:`)) &&
+        rows.every((row) => row.status === "Pinned" && !row.error && !row.warning && !row.archived)) {
+      return ["", file, "  All Actions already SHA-pinned; no changes needed."];
+    }
     const actionName = (row: ScanRow) => row.reference.replace(/@[^@]*$/, "").toLowerCase();
     rows.sort((a, b) => actionName(a).localeCompare(actionName(b), "en") || a.line - b.line);
     const status = (row: ScanRow) => row.status === "local" ? "Local dependency"

@@ -118,6 +118,11 @@ Full SHAs are abbreviated in the summary but retained in JSON.
 Long cell values wrap within their columns rather than being truncated.
 Below 80 columns, version details move below the table to keep it readable.
 Pin previews omit version columns; upgrade tables show `Target` instead of `Latest`.
+In pin previews (including `--dry-run`), unchanged files whose references are all
+SHA-pinned show a one-line "All Actions already SHA-pinned; no changes needed."
+summary instead of a table. Files with proposed changes, unresolved references,
+warnings, errors, or policy findings retain their tables. Empty files still
+show "No uses found in file." JSON and `pin --write` output are unchanged.
 
 ```text
 Workflow scan: 1 file
@@ -233,6 +238,12 @@ command. See [compatibility limits](pinning-and-upgrades.md#compatibility-checks
 Reports use consistent sections and terminal-aware wrapping. Comparisons group
 compatibility findings separately from manual-review guidance. Detailed Action
 inputs use a compact table; deprecation warnings remain outside the table.
+Detailed outputs use an Output/Description table, with explicit messages for
+missing descriptions or no declared outputs. Inspection colors current Version
+and Immutable fields by pin state, and latest-release fields cyan when an
+update exists. Comparison highlights its After reference cyan as the target
+(not as a pin-state indicator); findings remain yellow and manual-review
+guidance stays separate. JSON and copyable pin suggestions are unchanged.
 Within each file, scan, pin, and upgrade tables sort by Action name (ignoring
 case and version), then by source line. Repeated Actions stay together even
 when their versions differ. Line numbers still refer to the original file;

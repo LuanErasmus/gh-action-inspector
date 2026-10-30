@@ -1,6 +1,6 @@
 import type { ActionReferenceType } from "./resolve-reference.js";
 import type { ActionDetails, ActionDetailsComparison } from "./action-details.js";
-import { formatTable, renderLines, type DisplayOptions } from "./terminal.js";
+import { formatTable, renderLines, type CellColor, type DisplayOptions } from "./terminal.js";
 
 export interface InspectionReport {
   action: string;
@@ -85,6 +85,18 @@ export function formatText(report: InspectionReport, color: boolean, width?: num
   const metadataPath = (report.details?.path ?? "action.yml").split("/")
     .map(encodeURIComponent).join("/");
   const metadataUrl = `https://github.com/${report.repository}/blob/${report.details?.sha}/${metadataPath}`;
+  const fieldColors = new Map<string, CellColor>();
+  const pinColor = reference.immutable ? "green" : "yellow";
+  for (const [section, rows] of sections) {
+    for (const [label, value] of rows) {
+      const style = section === "Reference" && ["Version", "Immutable"].includes(label) ? pinColor
+        : section === "Latest release" && ["Version", "Newer version"].includes(label)
+          ? latestRelease?.newerAvailable ? "cyan" : pinColor
+          : section === "Latest release" && label === "Status" ? "yellow"
+          : label === "Archived" && report.archived ? "red" : undefined;
+      if (style) fieldColors.set(`  ${label.padEnd(labelWidth)}${value}`, style);
+    }
+  }
 
   return renderLines([
     `${report.action}@${reference.original}`,
@@ -120,13 +132,14 @@ export function formatText(report: InspectionReport, color: boolean, width?: num
       )),
       "",
       heading(`Outputs (${Object.keys(report.details.outputs).length})`),
-      ...Object.entries(report.details.outputs).flatMap(([name, output]) => [
-        `  Output ${name}`,
-        ...descriptionLines(output.description),
-        "",
-      ]),
+      ...(Object.keys(report.details.outputs).length ? formatTable(
+        ["Output", "Description"],
+        Object.entries(report.details.outputs).map(([name, output]) => [
+          name, output.description?.trim() || "(not documented)",
+        ]), tableWidth,
+      ) : ["  No outputs declared."]),
     ] : []),
-  ], { color, width });
+  ], { color, width }, new Set(), new Set(), fieldColors);
 }
 
 export function formatComparison(
@@ -149,12 +162,20 @@ export function formatComparison(
     ]),
     ...comparison.deprecatedInputs.map((input) => `  WARNING Deprecated ${input.input}: ${input.deprecationMessage}`),
   ];
-  return renderLines([
-    "Action comparison",
+  const findingCount = findings.filter((line) => line.startsWith("  WARNING")).length;
+  const references = [
     `  Before: ${before}`,
     `  After:  ${after}`,
+  ];
+  const lineColors = new Map<string, CellColor>([
+    [references[1], "cyan"],
+    [`Findings (${findingCount})`, findingCount ? "yellow" : undefined],
+  ]);
+  return renderLines([
+    "Action comparison",
+    ...references,
     "",
-    `Findings (${findings.filter((line) => line.startsWith("  WARNING")).length})`,
+    `Findings (${findingCount})`,
     ...(findings.length ? findings : [
       "  No interface or runtime changes detected.",
       `  Runtime: ${comparison.runtimeAfter}`,
@@ -163,5 +184,5 @@ export function formatComparison(
     "Manual review",
     `  ${comparison.notice}`,
     `  Release notes: ${releaseNotes}`,
-  ], options);
+  ], options, new Set(), new Set(), lineColors);
 }

@@ -29,7 +29,7 @@ function displayWidth(text: string): number {
     .reduce((total, width) => total + width, 0);
 }
 
-type CellColor = "green" | "yellow" | "cyan" | "red" | undefined;
+export type CellColor = "green" | "yellow" | "cyan" | "red" | undefined;
 
 export function formatTable(
   headers: string[], rows: string[][], width = 100,
@@ -92,6 +92,7 @@ export function renderLines(
   options: DisplayOptions = {},
   literalLines: ReadonlySet<string> = new Set(),
   fileHeadings: ReadonlySet<string> = new Set(),
+  lineColors: ReadonlyMap<string, CellColor> = new Map(),
 ): string[] {
   return lines.flatMap((line) => {
     const plain = stripVTControlCharacters(line);
@@ -99,6 +100,10 @@ export function renderLines(
     const literal = literalLines.has(line) || /^\s*uses:|^[+-]|^@@/.test(plain);
     const wrapped = options.width === undefined || literal ? plain.split("\n") : wrapText(plain, options.width);
     if (!options.color) return wrapped;
+    const explicitColor = lineColors.get(plain);
+    if (explicitColor) {
+      return wrapped.map((part) => styleText(explicitColor, part, { validateStream: false }));
+    }
     if (fileHeadings.has(line)) {
       return wrapped.map((part) => styleText(["bold", "magenta"], part, { validateStream: false }));
     }

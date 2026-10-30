@@ -261,6 +261,53 @@ describe("readable terminal reports", () => {
     expect(lines.join("\n")).not.toContain("@@");
   });
 
+  it("summarizes unchanged pinned files only in pin previews", () => {
+    const report: ScanReport = {
+      mode: "pin", files: 2, errors: [],
+      rows: [
+        { file: "pinned.yml", line: 2, reference: `actions/checkout@${sha}`, status: "Pinned" },
+        { file: "changed.yml", line: 4, reference: "actions/checkout@v4", status: "Unpinned" },
+      ],
+      changes: [{ file: "changed.yml", line: 4, before: "uses: actions/checkout@v4", after: `uses: actions/checkout@${sha}` }],
+    };
+    const plain = formatScan(report, { width: 120 });
+    expect(plain.join("\n")).toContain("pinned.yml\n  All Actions already SHA-pinned; no changes needed.");
+    expect(plain.filter((line) => line.includes("| Line"))).toHaveLength(1);
+    expect(plain.join("\n")).toContain("L4");
+    expect(formatScan(report, { width: 120, color: true }).map(stripVTControlCharacters)).toEqual(plain);
+    for (const other of [{ ...report, mode: "scan" as const }, { ...report, mode: "upgrade" as const }, { ...report, written: [] }]) {
+      expect(formatScan(other).join("\n")).not.toContain("All Actions already SHA-pinned");
+    }
+  });
+
+  it.each([
+    { status: "Error", error: "Lookup failed" },
+    { status: "local" },
+    { status: "expression" },
+    { status: "docker" },
+    { status: "Unpinned" },
+    { status: "Pinned", warning: "Release lookup failed" },
+    { status: "Pinned", archived: true },
+  ])("retains pin-preview tables for unresolved references or diagnostics: %j", (state) => {
+    const report: ScanReport = {
+      mode: "pin", files: 1, errors: [], changes: [],
+      rows: [{ file: "ci.yml", line: 2, reference: "owner/action@v1", ...state }],
+    };
+    const output = formatScan(report).join("\n");
+    expect(output).toContain("| Line");
+    expect(output).not.toContain("All Actions already SHA-pinned");
+  });
+
+  it("retains pinned file tables when discovery or policy diagnostics apply", () => {
+    const report: ScanReport = {
+      mode: "pin", files: 1, errors: ["ci.yml: dependency could not be read"], changes: [],
+      rows: [{ file: "ci.yml", line: 2, reference: `owner/action@${sha}`, status: "Pinned" }],
+    };
+    expect(formatScan(report).join("\n")).toContain("| Line");
+    expect(formatScan({ ...report, errors: [], policyFailures: ["ci.yml:2: publisher not allowed"] }).join("\n"))
+      .toContain("| Line");
+  });
+
   it.each(["pin", "upgrade"] as const)("groups %s change cards once per file with plain/color parity", (mode) => {
     const changes = [
       { file: "ci.yml", line: 7, before: "  - uses: owner/action@v1", after: `  - uses: owner/action@${sha} # v1` },
@@ -297,7 +344,7 @@ describe("readable terminal reports", () => {
     expect(output).not.toContain("\x1b[");
   });
 
-  it("links full input descriptions while keeping output paragraphs indented", () => {
+  it("links full input descriptions and presents output descriptions in a compact table", () => {
     const report: InspectionReport = {
       ...inspection,
       details: {
@@ -309,7 +356,10 @@ describe("readable terminal reports", () => {
     const output = formatText(report, false, 80).join("\n");
     expect(output).not.toContain("First paragraph.");
     expect(output).not.toContain("Second paragraph.");
-    expect(output).toContain("  Output result\n    First output line.\n    Second output line.");
+    expect(output).toContain("| Output");
+    expect(output).toContain("| Description");
+    expect(output).toContain("First output line.");
+    expect(output).toContain("Second output line.");
   });
 
   it("distinguishes missing and empty defaults and links nested metadata exactly", () => {
@@ -338,6 +388,41 @@ describe("readable terminal reports", () => {
     }, false, 80).join("\n");
     expect(output).toContain("No inputs declared.");
     expect(output).not.toContain("| Input");
+  });
+
+  it.each([40, 80, 120])("colors inspection versions independently with plain-text parity at %i columns", (width) => {
+    const report: InspectionReport = {
+      ...inspection,
+      latestRelease: {
+        version: "v2.0.0", sha, releaseNotesUrl: "https://github.com/actions/example/releases/tag/v2.0.0",
+        newerAvailable: true, pinned: `actions/example@${sha}`,
+      },
+    };
+    const colored = formatText(report, true, width);
+    // Colored output also includes status markers; remove them for text parity.
+    const normalize = (line: string) => stripVTControlCharacters(line).replace(/[✓!✗] /g, "");
+    expect(colored.some((line) => line.includes("\x1b[36m") && line.includes("v2.0.0"))).toBe(true);
+    expect(colored.some((line) => line.includes("\x1b[33m") && line.includes("Immutable"))).toBe(true);
+    expect(colored.filter((line) => line.includes("uses:")).map(stripVTControlCharacters))
+      .toEqual(formatText(report, false, width).filter((line) => line.includes("uses:")));
+    expect(normalize(colored[0])).toBe(`${report.action}@v1`);
+  });
+
+  it("shows empty and undocumented output states explicitly", () => {
+    expect(formatText({ ...inspection, details: { ...details, outputs: {} } }, false).join("\n"))
+      .toContain("No outputs declared.");
+    expect(formatText({ ...inspection, details: { ...details, outputs: { result: {} } } }, false).join("\n"))
+      .toContain("(not documented)");
+  });
+
+  it.each([40, 80, 120])("preserves comparison text with target highlighting at %i columns", (width) => {
+    const comparison = compareActionDetails(details, details);
+    const args = ["owner/action@v1", "owner/action@v2", comparison, "https://github.com/owner/action/releases"] as const;
+    const plain = formatComparison(...args, { width });
+    const colored = formatComparison(...args, { width, color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    expect(colored.find((line) => line.includes("After:"))).toContain("\x1b[36m");
+    expect(colored.find((line) => line.includes("Before:"))).not.toContain("\x1b[33m");
   });
 
   it("groups comparison findings separately from manual-review guidance", () => {
