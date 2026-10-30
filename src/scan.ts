@@ -475,8 +475,17 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
   const showVersions = report.mode !== "pin" && width >= 80;
   const showStatus = width >= 32;
   const versionHeader = report.mode === "upgrade" ? "Target" : "Latest";
+  const fileErrors = new Map<string, string[]>();
+  const otherErrors: string[] = [];
+  for (const error of report.errors) {
+    const file = [...groups.keys()].sort((a, b) => b.length - a.length)
+      .find((path) => error.startsWith(`${path}:`));
+    if (file) fileErrors.set(file, [...(fileErrors.get(file) ?? []), error]);
+    else otherErrors.push(error);
+  }
   const references = [...groups].flatMap(([file, rows]) => {
-    if (!rows.length) return ["", file, "  No uses found in file."];
+    const errors = (fileErrors.get(file) ?? []).map((error) => `  ERROR: ${error}`);
+    if (!rows.length) return ["", file, "  No uses found in file.", ...errors];
     const actionName = (row: ScanRow) => row.reference.replace(/@[^@]*$/, "").toLowerCase();
     rows.sort((a, b) => actionName(a).localeCompare(actionName(b), "en") || a.line - b.line);
     const status = (row: ScanRow) => row.status === "local" ? "Local dependency"
@@ -485,7 +494,12 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
       : report.mode === "scan" && row.status !== "Error" && row.publisher && row.newerAvailable === undefined
         ? `${row.status}\nUpdate: Unknown` : row.status;
     const cells = rows.map((row) => {
-      const reference = row.reference.replace(/@([a-f0-9]{40})$/i, (_, sha: string) => `@${sha.slice(0, 7)}...`);
+      const ref = row.reference.slice(row.reference.lastIndexOf("@") + 1);
+      const canShorten = showVersions && row.version &&
+        ["Pinned", "Unpinned"].includes(row.status) &&
+        /^(?:[a-f0-9]{40}|v?\d+(?:\.\d+)*(?:-[\w.-]+)?(?:\+[\w.-]+)?)$/i.test(ref);
+      const reference = canShorten ? row.reference.slice(0, row.reference.lastIndexOf("@"))
+        : row.reference.replace(/@([a-f0-9]{40})$/i, (_, sha: string) => `@${sha.slice(0, 7)}...`);
       return [
         `L${row.line}`, `${reference}${row.newerAvailable ? " [Update]" : ""}`,
         ...(showStatus ? [status(row)] : []),
@@ -516,8 +530,9 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
         if (cells[rowIndex][column] === "-") return undefined;
         if (column === versionColumn + 1 && row.newerAvailable) return "cyan";
         return row.status === "Pinned" ? "green" : row.status === "Unpinned" ? "yellow" : undefined;
-      } : undefined),
+      } : undefined, (index) => actionName(rows[index]) !== actionName(rows[index - 1])),
       ...(notes.length ? ["", ...notes] : []),
+      ...errors,
     ];
   });
   const preview: string[] = [];
@@ -538,17 +553,19 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
       );
     }
   }
-  const title = `${report.mode === "scan" ? "Workflow scan" : `${report.mode === "pin" ? "Pin" : "Upgrade"} ${report.written ? "result" : "preview"}`}: ${count(report.files, "file")}, ${count(report.rows.length, "reference")}`;
+  const title = `${report.mode === "scan" ? "Workflow scan" : `${report.mode === "pin" ? "Pin" : "Upgrade"} ${report.written ? "result" : "preview"}`}: ${count(report.files, "file")}`;
   const totals = [
+    count(report.rows.length, "reference"),
     `${report.rows.filter((row) => row.status === "Pinned").length} pinned`,
     `${report.rows.filter((row) => row.status === "Unpinned").length} unpinned`,
-    ...(report.mode === "scan" ? [`${report.rows.filter((row) => row.newerAvailable).length} updates available`] : []),
+    ...(report.mode !== "pin" ? [count(report.rows.filter((row) => row.newerAvailable).length, "update")] : []),
     `${report.errors.length + report.rows.filter((row) => row.error).length} errors`,
     ...(report.policyFailures?.length ? [count(report.policyFailures.length, "policy violation")] : []),
-  ].join(" | ");
+  ].join(" · ");
   return renderLines([
     title,
     totals,
+    ...(report.rows.length ? ["Pinning locks the ref; Latest/Target shows version freshness. Equal versions do not imply a pinned ref."] : []),
     ...(report.mode === "upgrade" ? [`Minimum release age: ${report.minReleaseAge ?? 0} days (publication age, not a stability guarantee).`] : []),
     ...(references.length ? references : ["", "No Action references found."]),
     ...report.rows.filter((row) => row.majorUpgrade).map((row) => `WARNING ${row.file}:${row.line}: major upgrade to ${row.target}; review release notes and compatibility.`),
@@ -573,7 +590,7 @@ export function formatScan(report: ScanReport, options: DisplayOptions = {}): st
         ] : ["Reusable workflow upgrade: review workflow_call inputs, outputs, and release notes manually."]),
       ];
     }),
-    ...(report.errors.length ? ["", "Discovery errors", ...report.errors.map((error) => `  ERROR: ${error}`)] : []),
+    ...(otherErrors.length ? ["", "Discovery errors", ...otherErrors.map((error) => `  ERROR: ${error}`)] : []),
     ...(report.policyFailures?.length ? ["", "Policy findings", ...report.policyFailures.map((failure) => `  POLICY: ${failure}`)] : []),
     ...(report.mode !== "scan" ? [
       "",

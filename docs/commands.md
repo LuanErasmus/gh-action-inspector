@@ -120,14 +120,16 @@ Below 80 columns, version details move below the table to keep it readable.
 Pin previews omit version columns; upgrade tables show `Target` instead of `Latest`.
 
 ```text
-Workflow scan: 1 file, 2 references
-1 pinned | 1 unpinned | 1 updates available | 0 errors
+Workflow scan: 1 file
+2 references · 1 pinned · 1 unpinned · 1 update · 0 errors
+Pinning locks the ref; Latest/Target shows version freshness. Equal versions do not imply a pinned ref.
 
 .github\workflows\ci.yml
-  | Line | Action                                         | Status   | Current | Latest |
-  |------|------------------------------------------------|----------|---------|--------|
-  | L16  | actions/checkout@3d3c42e...                     | Pinned   | v7.0.1  | v7.0.1 |
-  | L20  | actions/setup-node@v6 [Update]                  | Unpinned | v6.0.0  | v7.1.0 |
+  | Line | Action                      | Status   | Current | Latest |
+  |------|-----------------------------|----------|---------|--------|
+  | L16  | actions/checkout            | Pinned   | v7.0.1  | v7.0.1 |
+  |------|-----------------------------|----------|---------|--------|
+  | L20  | actions/setup-node [Update] | Unpinned | v6.0.0  | v7.1.0 |
 ```
 
 ### Discovery scope
@@ -235,6 +237,14 @@ Within each file, scan, pin, and upgrade tables sort by Action name (ignoring
 case and version), then by source line. Repeated Actions stay together even
 when their versions differ. Line numbers still refer to the original file;
 JSON reports, source files, and change previews retain their existing order.
+Subtle table dividers separate different Actions. When Current is visible and
+identifies a resolved version, numeric-tag and SHA references omit the ref from
+the Action label. Branches, unresolved references, pin tables, and narrow tables
+retain their references. Full references remain in JSON and change previews.
+The compact summary colors only nonzero status counts, and a single legend
+explains that pinning and version freshness are independent. Reference errors
+and discovery errors associated with a displayed file appear below its table;
+unassociated discovery errors remain in the Discovery errors section.
 
 Interactive terminals show an animated magenta progress spinner with elapsed
 time while inspecting, comparing, scanning, pinning, or upgrading. Repository

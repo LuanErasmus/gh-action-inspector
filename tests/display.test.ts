@@ -88,6 +88,43 @@ describe("readable terminal reports", () => {
     expect(report).toEqual(original);
   });
 
+  it("shortens versioned labels but keeps branches, unknown refs, and narrow references visible", () => {
+    const report: ScanReport = {
+      mode: "scan", files: 1, changes: [], errors: [],
+      rows: [
+        { file: "ci.yml", line: 1, reference: `actions/checkout@${sha}`, status: "Pinned", version: "v4.0.0" },
+        { file: "ci.yml", line: 2, reference: "actions/checkout@v3", status: "Unpinned", version: "v3.0.0" },
+        { file: "ci.yml", line: 3, reference: "actions/checkout@main", status: "Unpinned", version: "v4.0.0" },
+        { file: "ci.yml", line: 4, reference: "actions/setup-node@v4", status: "Unpinned" },
+      ],
+    };
+    const wide = formatScan(report, { width: 120 });
+    const action = (line: number) => wide.find((text) => text.includes(`L${line} `))!.split("|")[2].trim();
+    expect(action(1)).toBe("actions/checkout");
+    expect(action(2)).toBe("actions/checkout");
+    expect(action(3)).toBe("actions/checkout@main");
+    expect(action(4)).toBe("actions/setup-node@v4");
+    expect(wide.filter((text) => text.startsWith("  |-"))).toHaveLength(2);
+    const narrow = formatScan(report, { width: 60 }).join("\n");
+    expect(narrow).toContain("actions/checkout@v3");
+    expect(wide.join("\n")).toContain("4 references · 1 pinned · 3 unpinned · 0 updates · 0 errors");
+  });
+
+  it("keeps file-specific discovery errors beside the file and colors only nonzero summary counts", () => {
+    const report: ScanReport = {
+      ...scan, errors: [".github\\workflows\\ci.yml: could not read dependency", "Unknown discovery failure"],
+    };
+    const plain = formatScan(report, { width: 120 });
+    const output = plain.join("\n");
+    expect(output.indexOf("ERROR: .github\\workflows\\ci.yml")).toBeLessThan(output.indexOf(".github\\workflows\\deploy.yml"));
+    expect(output).toContain("Discovery errors\n  ERROR: Unknown discovery failure");
+    const colored = formatScan(report, { width: 120, color: true });
+    expect(colored.map(stripVTControlCharacters)).toEqual(plain);
+    expect(colored[1]).toContain("\x1b[32m1\x1b[39m pinned");
+    expect(colored[1]).not.toContain("\x1b[33m0");
+    expect(colored[1]).toContain("\x1b[36m1\x1b[39m update");
+  });
+
   it("moves version details below narrow tables instead of losing information", () => {
     const output = formatScan(scan, { width: 40 }).join("\n");
     expect(output).not.toContain("| Current");
@@ -109,7 +146,7 @@ describe("readable terminal reports", () => {
     const lines = formatScan(report, { width: 120 });
     expect(lines.filter((line) => line.includes("[Update]"))).toHaveLength(3);
     expect(lines.filter((line) => line.includes("[Update]"))
-      .every((line) => line.split("|")[2].includes("owner/action@v1 [Update]"))).toBe(true);
+      .every((line) => line.split("|")[2].includes("owner/action [Update]"))).toBe(true);
     expect(lines.some((line) => line.includes("Update: Available"))).toBe(false);
     expect(lines.some((line) => /^\s+L\d+$/.test(line))).toBe(false);
     const pipes = lines.filter((line) => line.startsWith("  |"))

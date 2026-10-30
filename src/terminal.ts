@@ -34,6 +34,7 @@ type CellColor = "green" | "yellow" | "cyan" | "red" | undefined;
 export function formatTable(
   headers: string[], rows: string[][], width = 100,
   colors?: (row: number, column: number) => CellColor,
+  separateBefore?: (row: number) => boolean,
 ): string[] {
   const widths = headers.map((header, index) => Math.max(
     displayWidth(header), ...rows.map((row) => displayWidth(row[index])),
@@ -54,7 +55,10 @@ export function formatTable(
       }).join(" | ")} |`);
   };
   const divider = `  |-${widths.map((size) => "-".repeat(size)).join("-|-")}-|`;
-  return [...formatRow(headers, -1), divider, ...rows.flatMap(formatRow)];
+  return [...formatRow(headers, -1), divider, ...rows.flatMap((row, index) => [
+    ...(index > 0 && separateBefore?.(index) ? [divider] : []),
+    ...formatRow(row, index),
+  ])];
 }
 
 /** Wrap prose and long identifiers without dropping characters. */
@@ -97,6 +101,16 @@ export function renderLines(
     if (!options.color) return wrapped;
     if (fileHeadings.has(line)) {
       return wrapped.map((part) => styleText(["bold", "magenta"], part, { validateStream: false }));
+    }
+    if (/^\d+ references? · /.test(plain)) {
+      return wrapped.map((part) => part.replace(
+        /\b([1-9]\d*) (pinned|unpinned|updates?|errors?|policy violations?)\b/g,
+        (match, count: string, label: string) => {
+          const color = label === "pinned" ? "green" : label === "unpinned" ? "yellow"
+            : label.startsWith("update") ? "cyan" : "red";
+          return match.replace(count, styleText(color, count, { validateStream: false }));
+        },
+      ));
     }
     if (/^\s*\|/.test(plain)) {
       return (line !== plain ? [line] : wrapped).map((part) => part.split("|").map((cell) => {
